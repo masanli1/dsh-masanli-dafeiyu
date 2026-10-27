@@ -318,7 +318,8 @@ export function apply(ctx) {
   const register = (target) => {
     try {
       if (!target.tools?.register) {
-        logger.warn?.('dsh-npss-denoiser: 没有找到 ctx.tools，工具未注册（需要 DSH 的 tools 服务）')
+        writeHeartbeat('no-tools')
+        logger.warn?.('dsh-dafeiyu: 没有找到 ctx.tools，降噪工具未注册（需要 DSH 的 tools 服务）')
         return
       }
       target.tools.register(createDenoiseTool({ logger }))
@@ -326,7 +327,8 @@ export function apply(ctx) {
       writeHeartbeat('registered')
     } catch (error) {
       // A registration failure must not take the whole host down.
-      logger.error?.(`dsh-npss-denoiser 注册工具失败，本次已停用: ${error?.message ?? error}`)
+      writeHeartbeat(`register-failed: ${String(error?.message ?? error).slice(0, 120)}`)
+    logger.error?.(`dsh-dafeiyu 注册降噪工具失败，本次已停用: ${error?.message ?? error}`)
     }
   }
   // Wait for the tool registry instead of hard-injecting it: a host without
