@@ -296,3 +296,28 @@ dsh plugin --profile desktop add /path/to/dsh-dafeiyu-0.1.19-chat.9.tgz
 - 用引用计数：多个来源（会话轮次、降噪任务）叠加时不会提前放行。
 - 设置项：`preventSleep`（默认开）、`preventSleepDisplay`（默认关）。
 - 诊断：`GET /plugins/dsh-dafeiyu/denoise/state` 里带 `power: {held, holders, active, turns, denoiseBusy}`。
+
+## 小说工坊（chat.15/16）
+
+设置页新增「小说工坊」：新建书名、查看每本书的章节与字数、展开看书目、打开目录、导出全书。
+
+目录结构（默认 `~/Documents/大肥鱼小说/`，可用 `novelRoot` 改）：
+
+```
+<书名>/
+├── meta.json
+├── outline.md          大纲
+├── characters.md       人物卡
+├── chapters/
+│   └── 第01章-雨夜.md
+└── <书名>-全书.md      导出产物
+```
+
+Agent 侧还注册了 `novel` 工具（action：`create / write / append / read / outline / characters / status / list / export`），
+可以直接说：
+
+> 给我写《长夜灯火》第 2 章，1500 字，接上一章的雨夜
+> 把《长夜灯火》的人物卡补一下
+> 统计一下这本书写了多少字
+
+接口：`/plugins/dsh-dafeiyu/novel/{books,book,create,export,open}`，仅本机回环可访问。

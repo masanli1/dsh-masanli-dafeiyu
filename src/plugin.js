@@ -12,6 +12,7 @@ import { createSpeaker } from './speech.js'
 import { apply as registerDenoiseTool, createDenoiseTool } from './denoise.js'
 import { createDenoiseJobs } from './denoise-jobs.js'
 import { createPowerKeeper } from './power.js'
+import { DEFAULT_NOVEL_ROOT, createNovelService, registerNovelTool } from './novel.js'
 import { resolveClientTarget } from './client-target.js'
 import { isLocalRequest, jsonResponse } from './local-http.js'
 import { BALANCE_ENDPOINT, createBalanceQuery, createBalanceMonitor, createBalanceHandler, balanceProviderNamespace } from './balance.js'
@@ -41,6 +42,14 @@ export { BALANCE_ENDPOINT }
 
 const here = dirname(fileURLToPath(import.meta.url))
 const assetsRoot = resolve(here, '..', 'assets')
+// DSH 0.2 把配置字段作为实时引用传进来；字符串字段要先解包再比较。
+function asString(value, fallback = '') {
+  let raw = value
+  if (raw && typeof raw === 'object' && typeof raw.get === 'function') raw = raw.get()
+  if (raw && typeof raw === 'object' && 'value' in raw) raw = raw.value
+  return typeof raw === 'string' && raw.trim() ? raw.trim() : fallback
+}
+
 export const Config = Schema.object({
   enabled: Schema.boolean().default(true).description('启用桌面大肥鱼'),
   scale: Schema.number().min(0.55).max(1.4).step(0.05).default(1).role('slider').description('角色大小'),
@@ -73,6 +82,7 @@ export const Config = Schema.object({
   greetingRepeatMinutes: Schema.number().min(5).max(240).step(5).default(25).description('两次打招呼的最小间隔'),
   preventSleep: Schema.boolean().default(true).description('DSH 有任务在跑时阻止电脑空闲休眠（macOS caffeinate）'),
   preventSleepDisplay: Schema.boolean().default(false).description('连屏幕也保持常亮（默认只防系统休眠）'),
+  novelRoot: Schema.string().default('').description('小说项目根目录（留空 = ~/Documents/大肥鱼小说）'),
 }).description('由 DeepSeek Harness 状态驱动的桌面大肥鱼伴侣')
 
 // Mark fields, rather than the root object: current DSH passes each volatile
@@ -103,6 +113,7 @@ const defaults = Object.freeze({
   greetingRepeatMinutes: 25,
   preventSleep: true,
   preventSleepDisplay: false,
+  novelRoot: '',
 })
 
 function publicConfig(config = {}) {
@@ -130,6 +141,7 @@ function publicConfig(config = {}) {
     greetingRepeatMinutes: Number.isFinite(config.greetingRepeatMinutes) ? config.greetingRepeatMinutes : defaults.greetingRepeatMinutes,
     preventSleep: config.preventSleep !== false,
     preventSleepDisplay: config.preventSleepDisplay === true,
+    novelRoot: asString(config.novelRoot, ''),
   }
 }
 
@@ -319,6 +331,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       powerHeld = false
     }
   }
+  const novel = createNovelService({ root: config.novelRootResolved ?? DEFAULT_NOVEL_ROOT, logger })
   const denoiseJobs = createDenoiseJobs({
     tool: createDenoiseTool({ logger }),
     logger,
@@ -549,6 +562,95 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({
           kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/novel/books',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            if (req.method !== 'GET') return jsonResponse(res, 405, { error: 'method not allowed' })
+            jsonResponse(res, 200, { root: novel.root, books: novel.listBooks() })
+          },
+        }),
+        'dsh-dafeiyu: novel list endpoint',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/novel/book',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            if (req.method !== 'GET') return jsonResponse(res, 405, { error: 'method not allowed' })
+            try {
+              const book = new URL(req.url ?? '/', 'http://dsh.local').searchParams.get('book')
+              jsonResponse(res, 200, novel.bookDetail(String(book ?? '')))
+            } catch (error) {
+              jsonResponse(res, 400, { error: error?.message ?? String(error) })
+            }
+          },
+        }),
+        'dsh-dafeiyu: novel detail endpoint',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/novel/create',
+          handler: async (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            if (req.method !== 'POST') return jsonResponse(res, 405, { error: 'method not allowed' })
+            try {
+              const chunks = []
+              for await (const chunk of req) chunks.push(chunk)
+              const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+              jsonResponse(res, 200, novel.createBook(String(body.book ?? '')))
+            } catch (error) {
+              jsonResponse(res, 400, { error: error?.message ?? String(error) })
+            }
+          },
+        }),
+        'dsh-dafeiyu: novel create endpoint',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/novel/export',
+          handler: async (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            if (req.method !== 'POST') return jsonResponse(res, 405, { error: 'method not allowed' })
+            try {
+              const chunks = []
+              for await (const chunk of req) chunks.push(chunk)
+              const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+              jsonResponse(res, 200, novel.exportBook(String(body.book ?? '')))
+            } catch (error) {
+              jsonResponse(res, 400, { error: error?.message ?? String(error) })
+            }
+          },
+        }),
+        'dsh-dafeiyu: novel export endpoint',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/novel/open',
+          handler: async (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            if (req.method !== 'POST') return jsonResponse(res, 405, { error: 'method not allowed' })
+            try {
+              const chunks = []
+              for await (const chunk of req) chunks.push(chunk)
+              const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+              const dir = novel.bookPath(String(body.book ?? ''))
+              const open = await import('node:child_process')
+              open.spawn('/usr/bin/open', [dir], { stdio: 'ignore', detached: true }).unref()
+              jsonResponse(res, 200, { opened: dir })
+            } catch (error) {
+              jsonResponse(res, 400, { error: error?.message ?? String(error) })
+            }
+          },
+        }),
+        'dsh-dafeiyu: novel open endpoint',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
           path: '/plugins/dsh-dafeiyu/denoise/state',
           handler: (req, res) => {
             if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
@@ -657,14 +759,21 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
 }
 
 export function apply(ctx, config = {}) {
+  const logger = ctx.logger ?? console
+  const novelRoot = asString(config.novelRoot, DEFAULT_NOVEL_ROOT)
   // Settings is already a declared dependency. Keep observers on this fiber
   // so Loader's fiber-scoped volatile updates reach them.
-  mount(ctx, config)
+  mount(ctx, { ...config, novelRootResolved: novelRoot })
   // 降噪能力随伴侣一起安装：denoise_audio 工具（NPSS 核心，本地 CPU）。
   try {
-    registerDenoiseTool(ctx, ctx.logger ?? console)
+    registerDenoiseTool(ctx, logger)
   } catch (error) {
-    (ctx.logger ?? console).error?.(`dsh-dafeiyu 降噪工具挂载失败: ${error?.message ?? error}`)
+    logger.error?.(`dsh-dafeiyu 降噪工具挂载失败: ${error?.message ?? error}`)
+  }
+  try {
+    registerNovelTool(ctx, { logger, root: novelRoot })
+  } catch (error) {
+    logger.error?.(`dsh-dafeiyu 小说工具挂载失败: ${error?.message ?? error}`)
   }
 }
 
