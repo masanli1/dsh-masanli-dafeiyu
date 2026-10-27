@@ -9,6 +9,7 @@ import { createSettingsScope } from './settings-scope.js'
 import { createChatHandlers, createChatService } from './chat.js'
 import { createGreeter } from './greeter.js'
 import { createSpeaker } from './speech.js'
+import { apply as registerDenoiseTool } from './denoise.js'
 import { resolveClientTarget } from './client-target.js'
 import { isLocalRequest, jsonResponse } from './local-http.js'
 import { BALANCE_ENDPOINT, createBalanceQuery, createBalanceMonitor, createBalanceHandler, balanceProviderNamespace } from './balance.js'
@@ -566,6 +567,12 @@ export function apply(ctx, config = {}) {
   // Settings is already a declared dependency. Keep observers on this fiber
   // so Loader's fiber-scoped volatile updates reach them.
   mount(ctx, config)
+  // 降噪能力随伴侣一起安装：denoise_audio 工具（NPSS 核心，本地 CPU）。
+  try {
+    registerDenoiseTool(ctx, ctx.logger ?? console)
+  } catch (error) {
+    (ctx.logger ?? console).error?.(`dsh-dafeiyu 降噪工具挂载失败: ${error?.message ?? error}`)
+  }
 }
 
 export {

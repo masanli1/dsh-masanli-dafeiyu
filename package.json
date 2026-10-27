@@ -1,7 +1,7 @@
 {
   "name": "dsh-dafeiyu",
-  "version": "0.1.19-chat.8",
-  "description": "A desktop-native BigFish companion driven by DeepSeek Harness session events, with an in-page chat dock.",
+  "version": "0.1.19-chat.9",
+  "description": "大肥鱼伴侣 + 内置 NPSS 降噪：桌面宠物、页内聊天、本机语音、待机动作与 denoise_audio 工具",
   "author": "QCYTSN",
   "type": "module",
   "main": "src/index.js",
@@ -15,6 +15,7 @@
   "files": [
     "src/",
     "lib/client.js",
+    "python/",
     "lib/client-chat.js",
     "runtime/helper.py",
     "runtime/animation_model.py",
@@ -89,7 +90,8 @@
     "deepseek-harness",
     "dsh-plugin",
     "desktop-pet",
-    "agent-companion"
+    "agent-companion",
+    "denoise"
   ],
   "repository": {
     "type": "git",

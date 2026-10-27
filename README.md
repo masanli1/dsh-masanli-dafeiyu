@@ -253,3 +253,24 @@ CI 还会隔离安装 DSH 0.2.0-rc.2 并运行 `scripts/test-dsh-settings.mjs`�
 Host 通过 `DSH_DAFEIYU_ASSET_ROOT` 把原生 Helper 的资源根指向安装包内的 `assets/`，所以改完帧不用重新编译 Swift 助手。
 
 想再生成一批：`python3 scripts/gen-clips.py`（会重写 manifest，注意先备份）。
+
+## 内置降噪（chat.9）
+
+装这一个插件，同时得到桌宠和降噪工具 `denoise_audio`（NPSS-Enhancer 核心，纯 CPU、无模型下载）：
+
+- 音频/视频均可：wav 直接处理，其它容器与视频用 ffmpeg 抽轨、处理后再混回（画面流拷贝）；
+- 参数：`mode`（music/voice）、`targetDb`（定果寻因）、`fast`、`workers`；
+- 依赖：Python 3 + numpy（Host 会自动找 DSH 自带运行时；可用 `DSH_NPSS_PYTHON` 覆盖），视频/非 WAV 需要 ffmpeg；
+- 核心代码在 `python/`，许可沿用 NPSS-Enhancer：学术/非商业免费，商用需授权（见 `python/NPSS-*.md` 说明与上游 LICENSE）。
+
+典型用法（对 Agent 说）：
+
+> 把这个视频的声音降噪到 15 dB：/Users/me/clip.mp4
+
+安装（二选一）：
+
+```sh
+dsh plugin --profile desktop add github:masanli1/dsh-masanli-dafeiyu#v0.1.19-chat.9
+# 或下载 Release 里的 dsh-dafeiyu-*.tgz 后：
+dsh plugin --profile desktop add /path/to/dsh-dafeiyu-0.1.19-chat.9.tgz
+```
