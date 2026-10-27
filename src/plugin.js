@@ -11,6 +11,7 @@ import { createGreeter } from './greeter.js'
 import { createSpeaker } from './speech.js'
 import { apply as registerDenoiseTool, createDenoiseTool } from './denoise.js'
 import { createDenoiseJobs } from './denoise-jobs.js'
+import { createPowerKeeper } from './power.js'
 import { resolveClientTarget } from './client-target.js'
 import { isLocalRequest, jsonResponse } from './local-http.js'
 import { BALANCE_ENDPOINT, createBalanceQuery, createBalanceMonitor, createBalanceHandler, balanceProviderNamespace } from './balance.js'
@@ -70,6 +71,8 @@ export const Config = Schema.object({
   greetingEnabled: Schema.boolean().default(true).description('长时间没人理时主动打招呼'),
   greetingAfterMinutes: Schema.number().min(1).max(240).step(1).default(12).description('空闲多少分钟后打招呼'),
   greetingRepeatMinutes: Schema.number().min(5).max(240).step(5).default(25).description('两次打招呼的最小间隔'),
+  preventSleep: Schema.boolean().default(true).description('DSH 有任务在跑时阻止电脑空闲休眠（macOS caffeinate）'),
+  preventSleepDisplay: Schema.boolean().default(false).description('连屏幕也保持常亮（默认只防系统休眠）'),
 }).description('由 DeepSeek Harness 状态驱动的桌面大肥鱼伴侣')
 
 // Mark fields, rather than the root object: current DSH passes each volatile
@@ -98,6 +101,8 @@ const defaults = Object.freeze({
   greetingEnabled: true,
   greetingAfterMinutes: 12,
   greetingRepeatMinutes: 25,
+  preventSleep: true,
+  preventSleepDisplay: false,
 })
 
 function publicConfig(config = {}) {
@@ -123,6 +128,8 @@ function publicConfig(config = {}) {
     greetingEnabled: config.greetingEnabled !== false,
     greetingAfterMinutes: Number.isFinite(config.greetingAfterMinutes) ? config.greetingAfterMinutes : defaults.greetingAfterMinutes,
     greetingRepeatMinutes: Number.isFinite(config.greetingRepeatMinutes) ? config.greetingRepeatMinutes : defaults.greetingRepeatMinutes,
+    preventSleep: config.preventSleep !== false,
+    preventSleepDisplay: config.preventSleepDisplay === true,
   }
 }
 
@@ -291,7 +298,33 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   const chat = createChatService({ ctx, logger })
   const chatHandlers = createChatHandlers(chat, logger)
   const speaker = createSpeaker({ logger })
-  const denoiseJobs = createDenoiseJobs({ tool: createDenoiseTool({ logger }), logger })
+  let powerHeld = false
+  const power = createPowerKeeper({
+    logger,
+    extraArgs: () => (settings.get().preventSleepDisplay === true ? ['-i', '-m', '-d'] : ['-i', '-m']),
+  })
+  let denoiseBusy = 0
+  const syncPower = () => {
+    let want = false
+    try {
+      want = (activeTurns > 0 || denoiseBusy > 0) && settings.get().preventSleep !== false
+    } catch {
+      want = false
+    }
+    if (want && !powerHeld) {
+      power.acquire()
+      powerHeld = true
+    } else if (!want && powerHeld) {
+      power.release()
+      powerHeld = false
+    }
+  }
+  const denoiseJobs = createDenoiseJobs({
+    tool: createDenoiseTool({ logger }),
+    logger,
+    onJobStart: () => { denoiseBusy += 1; syncPower() },
+    onJobEnd: () => { denoiseBusy = Math.max(0, denoiseBusy - 1); syncPower() },
+  })
   let activeTurns = 0
   const greeter = createGreeter({
     config: () => settings.get(),
@@ -422,8 +455,8 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   // plugins".
   const offEvent = eventCtx.on('session/event', (session, event) => {
     chat.note(session, event)
-    if (event?.type === 'turn/start') activeTurns += 1
-    if (event?.type === 'turn/end') activeTurns = Math.max(0, activeTurns - 1)
+    if (event?.type === 'turn/start') { activeTurns += 1; syncPower() }
+    if (event?.type === 'turn/end') { activeTurns = Math.max(0, activeTurns - 1); syncPower() }
     if (event?.type !== 'turn/end') greeter.noteActivity()
     if (!bridge || !reducer) return
     try {
@@ -452,6 +485,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
     // to avoid spawning repeatedly while settings settle.
     try {
       balance.configure(next.enabled !== false && next.balanceEnabled, next.balanceSource)
+      syncPower()
       if (next.enabled === false) {
         if (restartTimer) {
           clearTimeout(restartTimer)
@@ -519,7 +553,10 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
           handler: (req, res) => {
             if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
             if (req.method !== 'GET') return jsonResponse(res, 405, { error: 'method not allowed' })
-            jsonResponse(res, 200, denoiseJobs.state())
+            jsonResponse(res, 200, {
+              ...denoiseJobs.state(),
+              power: { held: powerHeld, holders: power.holders, active: power.active, turns: activeTurns, denoiseBusy },
+            })
           },
         }),
         'dsh-dafeiyu: denoise state endpoint',
@@ -613,6 +650,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
     settings.dispose?.()
     balance.stop()
     greeter.stop()
+    power.stop()
     speaker.stop()
     stopRuntime('dsh-host-stop')
   })

@@ -7,7 +7,7 @@ import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path
 const MEDIA_EXT = new Set(['.mp4', '.mov', '.mkv', '.webm', '.m4v', '.avi', '.mp3', '.m4a', '.aac', '.wav', '.flac', '.aiff', '.aif', '.opus', '.ogg'])
 const MAX_HISTORY = 8
 
-export function createDenoiseJobs({ tool, logger = console, storePath = join(homedir(), '.dsh', 'dsh-dafeiyu-denoise.json'), root = homedir() }) {
+export function createDenoiseJobs({ tool, logger = console, storePath = join(homedir(), '.dsh', 'dsh-dafeiyu-denoise.json'), root = homedir(), onJobStart, onJobEnd } = {}) {
   let history = []
   try {
     const raw = JSON.parse(readFileSync(storePath, 'utf8'))
@@ -43,6 +43,7 @@ export function createDenoiseJobs({ tool, logger = console, storePath = join(hom
       fast: fast === true,
     }
     current = job
+    try { onJobStart?.() } catch {}
     const controller = new AbortController()
     void (async () => {
       try {
@@ -64,6 +65,7 @@ export function createDenoiseJobs({ tool, logger = console, storePath = join(hom
         logger.warn?.(`dsh-dafeiyu denoise: 失败 ${entry.error}`)
       } finally {
         current = null
+        try { onJobEnd?.() } catch {}
       }
     })()
     return { started: true, job }

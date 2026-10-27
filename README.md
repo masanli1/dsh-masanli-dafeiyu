@@ -286,3 +286,13 @@ dsh plugin --profile desktop add /path/to/dsh-dafeiyu-0.1.19-chat.9.tgz
 - 运行中显示进度，完成后展示输出路径、时长、RTF、目标/实测 dB，并在 `~/.dsh/dsh-dafeiyu-denoise.json` 保留最近 8 条记录。
 
 端点：`/plugins/dsh-dafeiyu/denoise/{state,run,browse}`，仅本机回环可访问。
+
+## 任务期间防止电脑休眠（chat.14）
+
+- DSH 有任务在跑（任一会话的 turn 进行中），或设置页里有降噪任务在处理时，Host 会启动
+  `/usr/bin/caffeinate -i -m` 顶住**系统空闲休眠**；全部结束后自动退出。
+- 默认**不**阻止屏幕休眠（屏幕可以正常变暗），需要连屏幕常亮时在设置里勾「屏幕也常亮」，
+  会改用 `-i -m -d`。
+- 用引用计数：多个来源（会话轮次、降噪任务）叠加时不会提前放行。
+- 设置项：`preventSleep`（默认开）、`preventSleepDisplay`（默认关）。
+- 诊断：`GET /plugins/dsh-dafeiyu/denoise/state` 里带 `power: {held, holders, active, turns, denoiseBusy}`。
