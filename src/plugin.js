@@ -9,7 +9,8 @@ import { createSettingsScope } from './settings-scope.js'
 import { createChatHandlers, createChatService } from './chat.js'
 import { createGreeter } from './greeter.js'
 import { createSpeaker } from './speech.js'
-import { apply as registerDenoiseTool } from './denoise.js'
+import { apply as registerDenoiseTool, createDenoiseTool } from './denoise.js'
+import { createDenoiseJobs } from './denoise-jobs.js'
 import { resolveClientTarget } from './client-target.js'
 import { isLocalRequest, jsonResponse } from './local-http.js'
 import { BALANCE_ENDPOINT, createBalanceQuery, createBalanceMonitor, createBalanceHandler, balanceProviderNamespace } from './balance.js'
@@ -290,6 +291,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   const chat = createChatService({ ctx, logger })
   const chatHandlers = createChatHandlers(chat, logger)
   const speaker = createSpeaker({ logger })
+  const denoiseJobs = createDenoiseJobs({ tool: createDenoiseTool({ logger }), logger })
   let activeTurns = 0
   const greeter = createGreeter({
     config: () => settings.get(),
@@ -509,6 +511,59 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({ kind: 'exact', path: CHAT_TARGET_ENDPOINT, handler: chatHandlers.target }),
         'dsh-dafeiyu: local chat target endpoint',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/denoise/state',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            if (req.method !== 'GET') return jsonResponse(res, 405, { error: 'method not allowed' })
+            jsonResponse(res, 200, denoiseJobs.state())
+          },
+        }),
+        'dsh-dafeiyu: denoise state endpoint',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/denoise/run',
+          handler: async (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            if (req.method !== 'POST') return jsonResponse(res, 405, { error: 'method not allowed' })
+            try {
+              const chunks = []
+              let bytes = 0
+              for await (const chunk of req) {
+                bytes += chunk.length
+                if (bytes > 8192) throw new Error('请求体过大')
+                chunks.push(chunk)
+              }
+              const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+              jsonResponse(res, 200, await denoiseJobs.start(body))
+            } catch (error) {
+              jsonResponse(res, 400, { error: error?.message ?? String(error) })
+            }
+          },
+        }),
+        'dsh-dafeiyu: denoise run endpoint',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/denoise/browse',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            if (req.method !== 'GET') return jsonResponse(res, 405, { error: 'method not allowed' })
+            try {
+              const dir = new URL(req.url ?? '/', 'http://dsh.local').searchParams.get('dir')
+              jsonResponse(res, 200, denoiseJobs.browse(dir))
+            } catch (error) {
+              jsonResponse(res, 400, { error: error?.message ?? String(error) })
+            }
+          },
+        }),
+        'dsh-dafeiyu: denoise browse endpoint',
       )
       httpCtx.effect(
         () => httpCtx.webServer.register({

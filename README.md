@@ -274,3 +274,15 @@ dsh plugin --profile desktop add github:masanli1/dsh-masanli-dafeiyu#v0.1.19-cha
 # 或下载 Release 里的 dsh-dafeiyu-*.tgz 后：
 dsh plugin --profile desktop add /path/to/dsh-dafeiyu-0.1.19-chat.9.tgz
 ```
+
+## 设置页降噪入口（chat.12）
+
+设置 → 大肥鱼 → 底部「降噪（NPSS）」：
+
+- **选择文件**：内置目录浏览（限制在用户目录内，只看音视频），点目录进入、点文件选中；
+- **模式**：音乐（全频带）/ 人声（16k 带限）；
+- **目标 dB**：可选，填了就是定果寻因；
+- **快速模式**：勾选后约 2 倍速；
+- 运行中显示进度，完成后展示输出路径、时长、RTF、目标/实测 dB，并在 `~/.dsh/dsh-dafeiyu-denoise.json` 保留最近 8 条记录。
+
+端点：`/plugins/dsh-dafeiyu/denoise/{state,run,browse}`，仅本机回环可访问。
