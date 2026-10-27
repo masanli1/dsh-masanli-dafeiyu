@@ -7,24 +7,23 @@ permissions:
 jobs:
   package:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - name: 打包插件（含 assets / runtime / python）
         run: |
-          pnpm install --ignore-scripts --no-frozen-lockfile || true
-          pnpm pack
+          set -euxo pipefail
+          npm pack --ignore-scripts
           ls -lh ./*.tgz
       - name: 创建 Release 并上传 tgz
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
+          set -euxo pipefail
           gh release create "$TAG" ./*.tgz \
             --title "大肥鱼 $TAG" \
-            --notes "包含桌面宠物、页内聊天、本机语音、待机动作与内置 NPSS 降噪（denoise_audio）。安装：dsh plugin --profile desktop add <tgz 路径> 或 github:masanli1/dsh-masanli-dafeiyu#$TAG"
+            --notes "包含桌面宠物、页内聊天、本机语音、待机动作与内置 NPSS 降噪（denoise_audio）。安装：dsh plugin --profile desktop add <tgz 路径>，或 github:masanli1/dsh-masanli-dafeiyu#$TAG"
