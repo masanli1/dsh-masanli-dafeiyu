@@ -175,6 +175,160 @@ def cmd_use(args):
           "true": int(y[query]), "predicted": pred})
 
 
+
+
+# ---------------------------------------------------------------- 程序复刻
+# 一段"程序" = 一组 (输入, 输出) 记录。把当前阀态跑出来的结果记下来，
+# 再用另一个阀态去逼近这组记录；学到的只是阀的位置/方向参数，
+# 所以同一个网络能装下很多个不同的"程序"。
+
+PROGRAMS = os.path.expanduser(os.path.join("~", "Documents", "大肥鱼技能", "programs"))
+
+
+def program_dir(name):
+    return os.path.join(PROGRAMS, name)
+
+
+def load_examples(name):
+    path = os.path.join(program_dir(name), "examples.json")
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def save_examples(name, payload):
+    os.makedirs(program_dir(name), exist_ok=True)
+    with open(os.path.join(program_dir(name), "examples.json"), "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+
+
+def resolve_state(source):
+    if not source or source == "baseline":
+        return load_baseline()
+    if source in ("random", "zero"):
+        S0, S1 = load_baseline()
+        rng = np.random.default_rng(0)
+        if source == "zero":
+            return np.zeros_like(S0), np.zeros_like(S1)
+        return rng.choice(STATES, size=S0.shape).astype(np.int8), rng.choice(STATES, size=S1.shape).astype(np.int8)
+    path = os.path.join(source, "state.npz") if os.path.isdir(source) else os.path.join(PROGRAMS, source, "state.npz")
+    d = np.load(path)
+    return d["S0"].astype(np.int8), d["S1"].astype(np.int8)
+
+
+def cmd_program(args):
+    if args.list:
+        names = sorted(os.listdir(PROGRAMS)) if os.path.isdir(PROGRAMS) else []
+        items = []
+        for name in names:
+            meta_path = os.path.join(PROGRAMS, name, "meta.json")
+            try:
+                with open(meta_path, encoding="utf-8") as handle:
+                    items.append(json.load(handle))
+            except OSError:
+                items.append({"name": name})
+        emit({"ok": True, "programs": items})
+        return
+
+    name = args.name
+    if not name:
+        raise SystemExit("需要 --name")
+    os.makedirs(program_dir(name), exist_ok=True)
+
+    if args.record:
+        X, y = load_data()
+        S0, S1 = resolve_state(args.source)
+        idx = [int(v) for v in args.record]
+        L = run_state(X[idx], S0, S1)
+        payload = load_examples(name) if os.path.exists(os.path.join(program_dir(name), "examples.json")) else {"name": name, "examples": []}
+        existing = {example["sample"]: example for example in payload["examples"]}
+        for row, sample_index in enumerate(idx):
+            existing[sample_index] = {
+                "sample": sample_index,
+                "label": int(y[sample_index]),
+                "input": [round(float(v), 6) for v in X[sample_index]],
+                "output": [round(float(v), 6) for v in L[row]],
+                "source": args.source or "baseline",
+            }
+        payload["examples"] = list(existing.values())
+        save_examples(name, payload)
+        emit({"ok": True, "event": "recorded", "name": name, "count": len(payload["examples"])})
+        return
+
+    if args.fit:
+        payload = load_examples(name)
+        examples = payload["examples"]
+        if not examples:
+            raise SystemExit("这个程序还没有记录任何样例")
+        X = np.asarray([example["input"] for example in examples], dtype=np.float32)
+        target = np.asarray([example["output"] for example in examples], dtype=np.float32)
+        S0, S1 = resolve_state(args.source)
+        rng = np.random.default_rng(args.seed)
+
+        def mse(a, b):
+            return float(np.mean((run_state(X, a, b) - target) ** 2))
+
+        best = mse(S0, S1)
+        best_state = (S0.copy(), S1.copy())
+        emit({"event": "start", "mse": round(best, 8), "examples": len(examples)})
+        trace = []
+        flat0 = np.concatenate([S0.ravel(), S1.ravel()])
+        n_edges = flat0.size
+        per_round = max(16, n_edges // 400)
+        for round_index in range(1, args.rounds + 1):
+            accepted = None
+            for _ in range(args.candidates):
+                a, b = best_state[0].copy(), best_state[1].copy()
+                flat = np.concatenate([a.ravel(), b.ravel()])
+                pick = rng.choice(flat.size, per_round, replace=False)
+                before = flat[pick].copy()
+                flat[pick] = rng.choice(STATES, per_round)
+                candidate = mse(flat[:a.size].reshape(a.shape), flat[a.size:].reshape(b.shape))
+                if candidate < best - 1e-10:
+                    opened = int(((flat[pick] != 0) & (before == 0)).sum())
+                    closed = int(((flat[pick] == 0) & (before != 0)).sum())
+                    accepted = {"round": round_index, "mse": round(candidate, 8),
+                                "opened": opened, "closed": closed,
+                                "flipped": int(per_round - opened - closed)}
+                    best = candidate
+                    best_state = (flat[: a.size].reshape(a.shape), flat[a.size:].reshape(b.shape))
+                    break
+            entry = accepted or {"round": round_index, "mse": round(best, 8), "accepted": False}
+            trace.append(entry)
+            emit(entry)
+
+        out_dir = program_dir(name)
+        np.savez_compressed(os.path.join(out_dir, "state.npz"), S0=best_state[0], S1=best_state[1], H=HID, OUT=OUT)
+        meta_path = os.path.join(out_dir, "meta.json")
+        try:
+            with open(meta_path, encoding="utf-8") as handle:
+                meta = json.load(handle)
+        except OSError:
+            meta = {"name": name}
+        meta.update({"kind": "tesla-program", "mse": round(best, 8), "examples": len(examples),
+                     "rounds": args.rounds, "trace": trace,
+                     "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%S")})
+        with open(meta_path, "w", encoding="utf-8") as handle:
+            json.dump(meta, handle, ensure_ascii=False, indent=2)
+        emit({"ok": True, "event": "fitted", "name": name, "mse": round(best, 8), "dir": out_dir})
+        return
+
+    if args.run:
+        payload = load_examples(name)
+        X, y = load_data()
+        sample = int(args.run)
+        S0, S1 = resolve_state(program_dir(name))
+        L = run_state(X[[sample]], S0, S1)[0]
+        recorded = next((example for example in payload["examples"] if example["sample"] == sample), None)
+        diff = None
+        if recorded:
+            diff = float(np.mean((L - np.asarray(recorded["output"], dtype=np.float32)) ** 2))
+        emit({"ok": True, "program": name, "sample": sample, "true": int(y[sample]),
+              "output": [round(float(v), 6) for v in L],
+              "mse_vs_recorded": round(diff, 8) if diff is not None else None})
+        return
+
+    raise SystemExit("program 需要 --record / --fit / --run / --list 之一")
+
 def main():
     parser = argparse.ArgumentParser(description="特斯拉阀 · 复刻")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -193,6 +347,18 @@ def main():
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--out", default=None)
     p.set_defaults(func=cmd_replicate)
+
+    p = sub.add_parser("program")
+    p.add_argument("--name", default=None)
+    p.add_argument("--list", action="store_true")
+    p.add_argument("--record", nargs="+", default=None)
+    p.add_argument("--fit", action="store_true")
+    p.add_argument("--run", type=int, default=None)
+    p.add_argument("--source", default=None)
+    p.add_argument("--rounds", type=int, default=20)
+    p.add_argument("--candidates", type=int, default=6)
+    p.add_argument("--seed", type=int, default=0)
+    p.set_defaults(func=cmd_program)
 
     p = sub.add_parser("use")
     p.add_argument("--skill", required=True)

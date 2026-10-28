@@ -58,12 +58,14 @@ export function registerTeslaTool(ctx, { logger = console } = {}) {
     parameters: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['simulate', 'replicate', 'use', 'skills'] },
+        action: { type: 'string', enum: ['simulate', 'replicate', 'use', 'skills', 'program-record', 'program-fit', 'program-run', 'programs'] },
         sample: { type: 'integer', description: 'MNIST 测试样本序号（0–9999）' },
         target: { type: 'integer', description: 'replicate 时的目标数字 0–9' },
         name: { type: 'string', description: 'replicate 时给这项功能起的名' },
         rounds: { type: 'integer', description: 'replicate 轮数，默认 12' },
         skill: { type: 'string', description: 'use 时用哪项功能（skills 里列出的名字）' },
+        samples: { type: 'array', items: { type: 'integer' }, description: 'program-record 时要记录的样本序号' },
+        source: { type: 'string', description: '录制/拟合的起点：baseline、技能名或程序名' },
       },
       required: ['action'],
       additionalProperties: false,
@@ -83,6 +85,65 @@ export function registerTeslaTool(ctx, { logger = console } = {}) {
     },
     async execute(args) {
       if (!existsSync(TESLA_CLI)) throw new Error('找不到 tesla_cli.py')
+      const python = (await findPython({ logger })).bin
+      const programs = () => {
+        const dir = join(SKILLS_DIR, 'programs')
+        if (!existsSync(dir)) return []
+        return readdirSync(dir, { withFileTypes: true })
+          .filter((entry) => entry.isDirectory())
+          .map((entry) => {
+            try { return JSON.parse(readFileSync(join(dir, entry.name, 'meta.json'), 'utf8')) } catch { return { name: entry.name } }
+          })
+      }
+      if (args.action === 'programs') {
+        const items = programs()
+        return {
+          ok: true,
+          skills: items,
+          summary: items.length
+            ? `复刻过的程序（${items.length} 个）：\n` + items.map((item) => `- ${item.name}：${item.examples ?? 0} 个样例，MSE ${item.mse ?? '—'}`).join('\n')
+            : '还没有复刻过任何程序',
+        }
+      }
+      if (args.action === 'program-record') {
+        const name = String(args.name ?? '').trim()
+        if (!name) throw new Error('program-record 需要 name')
+        const samples = (args.samples ?? []).map(Number).filter((value) => Number.isInteger(value))
+        if (samples.length === 0) throw new Error('program-record 需要 samples（样本序号）')
+        const extra = args.source ? ['--source', String(args.source)] : []
+        const [result] = await runCli(python, ['program', '--name', name, '--record', ...samples.map(String), ...extra], { timeoutMs: 300000 })
+        return { ok: true, ...result, summary: `已记录 ${result.count} 个样例到程序「${name}」` }
+      }
+      if (args.action === 'program-fit') {
+        const name = String(args.name ?? '').trim()
+        if (!name) throw new Error('program-fit 需要 name')
+        const extra = args.source ? ['--source', String(args.source)] : []
+        const lines = await runCli(python, ['program', '--name', name, '--fit', '--rounds', String(args.rounds ?? 20), ...extra], { timeoutMs: 1800000 })
+        const done = lines.find((line) => line.event === 'fitted') ?? {}
+        const trace = lines.filter((line) => line.event === 'start' || line.round)
+        const opened = trace.reduce((sum, entry) => sum + (entry.opened ?? 0), 0)
+        const closed = trace.reduce((sum, entry) => sum + (entry.closed ?? 0), 0)
+        return {
+          ok: true,
+          ...done,
+          trace,
+          summary: `程序「${name}」复刻完成：累计试开 ${opened} 条边、试关 ${closed} 条边，最终 MSE ${done.mse}。`,
+        }
+      }
+      if (args.action === 'program-run') {
+        const name = String(args.name ?? '').trim()
+        if (!name) throw new Error('program-run 需要 name')
+        const [result] = await runCli(python, ['program', '--name', name, '--run', String(args.sample ?? 0)], { timeoutMs: 300000 })
+        if (!result) throw new Error('没有拿到结果')
+        return {
+          ok: true,
+          ...result,
+          summary: `程序「${name}」跑样本 #${result.sample}（真值 ${result.true}），`
+            + (result.mse_vs_recorded === null || result.mse_vs_recorded === undefined
+              ? '该样本未记录过，输出为新计算。'
+              : `与记录输出的 MSE = ${result.mse_vs_recorded}。`),
+        }
+      }
       if (args.action === 'skills') {
         const skills = listSkills()
         return {
@@ -93,7 +154,6 @@ export function registerTeslaTool(ctx, { logger = console } = {}) {
             : '还没有学会任何功能',
         }
       }
-      const python = (await findPython({ logger })).bin
       if (args.action === 'simulate') {
         const [result] = await runCli(python, ['simulate', '--sample', String(args.sample ?? 0)], { timeoutMs: 180000 })
         if (!result) throw new Error('没有拿到结果')

@@ -405,3 +405,27 @@ DSH 0.2 目前没有给插件暴露“会话置顶”接口，所以做不到真
 ```text
 GET /plugins/dsh-dafeiyu/tesla/skills   # 列出技能
 ```
+
+## 程序复刻：只靠阀的位置参数装下多个程序（chat.24）
+
+把「复刻」从"目标数字"推广成**任意程序**：
+
+```text
+一段程序 = 一组 (输入, 输出) 记录
+复刻     = 调整阀的位置/方向，让网络对同样的输入产生同样的输出
+产物     = 一份阀态参数（state.npz），就是一个"装进来的程序"
+```
+
+| 动作 | 说明 |
+|---|---|
+| `tesla action=program-record name=S samples=[0,1,2,3] [source=baseline]` | 记录输入和结果（source 可以是 baseline / 某个技能 / random / zero） |
+| `tesla action=program-fit name=S rounds=10 [source=random]` | 从 source 出发逐轮试阀，最小化与记录输出的 MSE，记录每轮试开/试关条数 |
+| `tesla action=program-run name=S sample=2` | 跑样本，报告输出与记录值的 MSE |
+| `tesla action=programs` | 列出复刻过的程序 |
+
+存放：`~/Documents/大肥鱼技能/programs/<名字>/{examples.json, state.npz, meta.json}`。
+每个程序只是一份 `int8` 阀态 + 样例，互不干扰——**同一张网络可以装很多个程序**，
+切换程序就是切换阀态。
+
+实测：从 `random` 阀态起步复刻 baseline 的 4 个样例，10 轮内
+试开 256 条边、试关 243 条边，MSE 从 ~1e-3 降到 **1e-8**。
