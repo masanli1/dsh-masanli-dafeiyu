@@ -9,11 +9,13 @@ import { findPython } from './denoise.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 export const TESLA_CLI = join(here, '..', 'python', 'tesla', 'tesla_cli.py')
+export const VOICE_CLI = join(here, '..', 'python', 'tesla', 'voice_cli.py')
+export const VOICES_DIR = join(homedir(), 'Documents', '大肥鱼声音')
 export const SKILLS_DIR = join(homedir(), 'Documents', '大肥鱼技能')
 
-function runCli(python, args, { timeoutMs = 300000 } = {}) {
+function runCli(python, args, { timeoutMs = 300000, script = TESLA_CLI, env = {} } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(python, [TESLA_CLI, ...args], { stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(python, [script, ...args], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...env } })
     let stdout = ''
     let stderr = ''
     const timer = setTimeout(() => {
@@ -58,7 +60,7 @@ export function registerTeslaTool(ctx, { logger = console } = {}) {
     parameters: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['simulate', 'replicate', 'use', 'skills', 'program-record', 'program-fit', 'program-run', 'program-compile', 'programs'] },
+        action: { type: 'string', enum: ['simulate', 'replicate', 'use', 'skills', 'program-record', 'program-fit', 'program-run', 'program-compile', 'programs', 'voice-learn', 'voice-speak', 'voices'] },
         sample: { type: 'integer', description: 'MNIST 测试样本序号（0–9999）' },
         target: { type: 'integer', description: 'replicate 时的目标数字 0–9' },
         name: { type: 'string', description: 'replicate 时给这项功能起的名' },
@@ -68,6 +70,8 @@ export function registerTeslaTool(ctx, { logger = console } = {}) {
         hidden: { type: 'integer', description: '隐藏塔数量（规模）：默认 64，程序更大就调大，如 128 / 256' },
         out: { type: 'integer', description: '出口塔数量：默认 24' },
         source: { type: 'string', description: '录制/拟合的起点：baseline、random、zero、技能名或程序名' },
+        wav: { type: 'string', description: 'voice-learn：要复刻的声音文件路径（wav/mp3/m4a…）' },
+        text: { type: 'string', description: 'voice-speak：要说的话' },
         spec: {
           type: 'object',
           description: 'program-compile 的程序描述：{name, expr, output_dim}，expr 里可用 x(批量 784 维)、x0(单条)、n',
@@ -174,6 +178,34 @@ export function registerTeslaTool(ctx, { logger = console } = {}) {
           summary: `程序「${name}」编译完成：累计试开 ${opened} 条边、试关 ${closed} 条边；`
             + `训练 MSE ${done.mse}，留出集 MSE ${done.holdout_mse}（保真度 ${done.fidelity}）。`,
         }
+      }
+      const ffmpegEnv = { DF_FACTORY_FFMPEG: process.env.DF_FACTORY_FFMPEG ?? '' }
+      if (args.action === 'voices') {
+        const [result] = await runCli(python, ['list'], { script: VOICE_CLI })
+        const items = result?.voices ?? []
+        return {
+          ok: true,
+          skills: items,
+          summary: items.length
+            ? `已学会 ${items.length} 个音色：\n` + items.map((item) => `- ${item.name}（拟合 MSE ${item.mse ?? '—'}）`).join('\n')
+            : '还没有学会任何音色',
+        }
+      }
+      if (args.action === 'voice-learn') {
+        const wav = String(args.wav ?? '').trim()
+        if (!wav) throw new Error('voice-learn 需要 wav 路径')
+        const name = String(args.name ?? 'voice').trim()
+        const [result] = await runCli(python, ['learn', '--wav', wav, '--name', name, '--rounds', String(args.rounds ?? 10)],
+          { script: VOICE_CLI, env: ffmpegEnv, timeoutMs: 900000 })
+        return { ok: true, ...result, summary: `学会了音色「${name}」：24 段频谱包络已记录，拟合 MSE ${result.mse}。` }
+      }
+      if (args.action === 'voice-speak') {
+        const voice = String(args.skill ?? args.name ?? '').trim()
+        const text = String(args.text ?? '').trim()
+        if (!voice || !text) throw new Error('voice-speak 需要 skill（音色名）和 text')
+        const [result] = await runCli(python, ['speak', '--voice', voice, '--text', text, '--no-play'],
+          { script: VOICE_CLI, env: ffmpegEnv, timeoutMs: 300000 })
+        return { ok: true, ...result, summary: `用音色「${voice}」说了：${text}` }
       }
       if (args.action === 'skills') {
         const skills = listSkills()

@@ -492,3 +492,22 @@ tesla action=replicate target=5 name=big5 hidden=256 out=48 rounds=5
 
 流量大的边改一下影响面太大，反而更噪声；真正该动的是"水流小但决定分支"的边，
 这需要按梯度的思路，不是按流量。
+
+## 声音复刻：给大肥鱼换音色（chat.28）
+
+把水塔网络当**储层**用：阀态决定 24 个频段的能量分布，一个阀态 = 一个音色。
+
+| 动作 | 说明 |
+|---|---|
+| `tesla action=voice-learn wav=/path/clip.wav name=某某` | 从一段声音里学 24 段频谱包络，存成音色（阀态 + 包络） |
+| `tesla action=voice-speak skill=某某 text="..."` | 用该音色说话（TTS + 频响整形） |
+| `tesla action=voices` | 列出学过的音色 |
+
+存放：`~/Documents/大肥鱼声音/<名字>/{meta.json, state.npz}`
+（`python/tesla/voice_cli.py`，依赖 ffmpeg 与 `/usr/bin/say`）
+
+现状与下一步：
+
+- v1 用**实测包络**做整形，音色已经是真的（可播放）；
+- 阀态拟合 MSE 约 1.5，还没好到能"用阀态自己算出包络"，所以阀态目前只是记录；
+- 下一步：把拟合做稳，让出口塔水位直接驱动合成，再接到大肥鱼的语音上。
