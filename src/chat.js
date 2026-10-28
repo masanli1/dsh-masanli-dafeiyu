@@ -68,7 +68,7 @@ const CHAT_STORE = join(homedir(), '.dsh', 'dsh-dafeiyu-chat.json')
 // 和工作会话彻底分开，不会互相挤位置。
 export const PET_WORKSPACE = join(homedir(), 'Documents', '大肥鱼聊天')
 
-export function createChatService({ ctx, logger = console, config = () => ({}), storePath = CHAT_STORE }) {
+export function createChatService({ ctx, logger = console, config = () => ({}), storePath = CHAT_STORE, memory } = {}) {
   const sessions = new Map()
   let targetId
   let manualTarget = ''
@@ -281,11 +281,55 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
     }
   }
 
+  // 当前工作会话的最近几条消息：只取非宠物会话，压缩成一段背景。
+  const workSummary = async (excludeIds) => {
+    const query = ctx.get?.('sessionQuery')
+    if (!query?.observeSession) return ''
+    const candidates = [...sessions.values()]
+      .filter((record) => !excludeIds.includes(record.id))
+      .sort((a, b) => b.at - a.at)
+      .slice(0, 3)
+    for (const record of candidates) {
+      try {
+        const observation = await query.observeSession(record.id)
+        const messages = messagesFromEvents(observation?.events).slice(-6)
+        const header = observation?.header ?? {}
+        const title = String(header.title ?? header.name ?? '').trim() || baseName(header.cwd) || record.id.slice(0, 8)
+        try { observation?.[Symbol.dispose]?.() } catch {}
+        if (messages.length === 0) continue
+        const body = messages.map((message) => `${message.role === 'user' ? '用户' : '助手'}：${message.text.replace(/\s+/g, ' ').slice(0, 140)}`).join('\n')
+        return `当前工作会话「${title}」最近：\n${body}`.slice(0, 1200)
+      } catch {
+        // 换下一个会话
+      }
+    }
+    return ''
+  }
+
+  const buildContext = async () => {
+    try {
+      if (config()?.contextInjection === false) return ''
+      const parts = []
+      const remembered = memory?.summary?.()
+      if (remembered) parts.push(`长期记忆：\n${remembered}`)
+      // 只排除宠物会话本身；targetId 可能是某个工作会话（turn/start 时更新），不能一起排除。
+      const petId = manualTarget || dedicatedId
+      const work = await workSummary([petId].filter(Boolean))
+      if (work) parts.push(work)
+      if (parts.length === 0) return ''
+      return `<dfy-context>\n${parts.join('\n\n').slice(0, 1800)}\n</dfy-context>\n`
+    } catch (error) {
+      logger.warn?.(`dsh-dafeiyu chat: 生成上下文失败: ${error?.message ?? error}`)
+      return ''
+    }
+  }
+
   const send = async (text) => {
     const value = typeof text === 'string' ? text.trim() : ''
     if (!value) throw new Error('消息不能为空')
     const id = await targetForUse()
     if (!id) throw new Error('先在面板顶部选一个会话，再发送')
+    const context = await buildContext()
     const controller = ctx.get?.('sessionController')
     if (!controller?.prompt) throw new Error('当前 Host 没有提供会话写入服务')
     // The controller starts with `signal.throwIfAborted()`, so the cancellation
@@ -296,7 +340,7 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
       sessionId: id,
       requestId: randomUUID(),
       mode: 'queue',
-      content: [{ type: 'text', text: value.slice(0, MAX_TEXT) }],
+      content: [{ type: 'text', text: (context + value).slice(0, MAX_TEXT + 2000) }],
       clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     }, admission.signal)
     if (receipt?.accepted !== true) throw new Error('会话没有接受这条消息')
@@ -326,7 +370,12 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
     return { sessionId: id }
   }
 
-  return { note, state, send, select }
+  const debug = () => ({
+    targetId, dedicatedId, manualTarget,
+    sessions: [...sessions.values()].map((record) => ({ id: record.id, title: record.title, at: record.at })),
+  })
+
+  return { note, state, send, select, buildContext, debug }
 }
 
 export const CHAT_SERVER_VERSION = 'v5'

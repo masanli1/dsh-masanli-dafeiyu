@@ -357,3 +357,28 @@ DSH 0.2 目前没有给插件暴露“会话置顶”接口，所以做不到真
 现在 `adoptModel()` 会在创建/复用宠物会话时：优先沿用当前活跃会话的模型选择；
 读不到时退回 catalog 里**确实存在且有凭据的分组**（优先 `deepseek-account`），
 并在日志里打印最终选择。排查用：`GET /plugins/dsh-dafeiyu/debug/models`。
+
+## 跨会话上下文 + 长期记忆（chat.21/22）
+
+### 工作摘要注入
+
+宠物专属会话发消息前，Host 会取**最近活跃的非宠物会话**的最近 6 条消息 + 项目名，和长期记忆一起
+压成 `<dfy-context>…</dfy-context>` 块，贴在用户消息前面发给模型：
+
+- 模型能看到上下文，因此「我刚才在做什么」能答上来；
+- 面板渲染时会把这段 `<dfy-context>` 剥离，**界面上不显示**；
+- DSH 主界面的会话记录里仍能看到这段（这是消息的一部分），介意的话可以在设置里关掉
+  `contextInjection`。
+
+### 长期记忆
+
+- 文件：`~/Documents/大肥鱼记忆.json`（可直接编辑）；
+- 设置页「长期记忆」区块：查看、添加、删除单条、清空，并显示文件路径；
+- 工具 `memory`（add / list / remove / clear）：对她说「记住我喜欢蓝色」就会落盘；
+- 每次聊天自动把记忆摘要注入上下文，跨会话共享。
+
+### 排查端点（仅本机）
+
+- `GET /plugins/dsh-dafeiyu/memory` 记忆列表
+- `GET /plugins/dsh-dafeiyu/debug/chat` 本次会注入的上下文（含跟踪到的会话）
+- `GET /plugins/dsh-dafeiyu/debug/models` 模型 catalog 与会话当前选择

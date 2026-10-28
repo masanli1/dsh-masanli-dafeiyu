@@ -12,6 +12,7 @@ import { createSpeaker } from './speech.js'
 import { apply as registerDenoiseTool, createDenoiseTool } from './denoise.js'
 import { createDenoiseJobs } from './denoise-jobs.js'
 import { createPowerKeeper } from './power.js'
+import { createMemoryStore, registerMemoryTool } from './memory.js'
 import { DEFAULT_NOVEL_ROOT, createNovelService, registerNovelTool } from './novel.js'
 import { resolveClientTarget } from './client-target.js'
 import { isLocalRequest, jsonResponse } from './local-http.js'
@@ -83,6 +84,8 @@ export const Config = Schema.object({
   preventSleep: Schema.boolean().default(true).description('DSH 有任务在跑时阻止电脑空闲休眠（macOS caffeinate）'),
   preventSleepDisplay: Schema.boolean().default(false).description('连屏幕也保持常亮（默认只防系统休眠）'),
   novelRoot: Schema.string().default('').description('小说项目根目录（留空 = ~/Documents/大肥鱼小说）'),
+  memoryEnabled: Schema.boolean().default(true).description('跨会话长期记忆（偏好、常用路径等）'),
+  contextInjection: Schema.boolean().default(true).description('聊天时自动附带工作会话摘要和长期记忆作为上下文'),
   chatMode: Schema.union([
     Schema.const('dedicated').description('宠物专属会话（累积上下文）'),
     Schema.const('current').description('跟随当前会话'),
@@ -119,6 +122,8 @@ const defaults = Object.freeze({
   preventSleepDisplay: false,
   novelRoot: '',
   chatMode: 'dedicated',
+  memoryEnabled: true,
+  contextInjection: true,
 })
 
 function publicConfig(config = {}) {
@@ -148,6 +153,8 @@ function publicConfig(config = {}) {
     preventSleepDisplay: config.preventSleepDisplay === true,
     novelRoot: asString(config.novelRoot, ''),
     chatMode: config.chatMode === 'current' ? 'current' : 'dedicated',
+    memoryEnabled: config.memoryEnabled !== false,
+    contextInjection: config.contextInjection !== false,
   }
 }
 
@@ -313,7 +320,7 @@ function mount(ctx, config = {}, eventCtx = ctx) {
 function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   const eventStream = createEventStream()
   const settings = createSettingsScope(ctx, Config, config, publicConfig)
-  const chat = createChatService({ ctx, logger, config: () => settings.get() })
+  const chat = createChatService({ ctx, logger, config: () => settings.get(), memory: config.memoryStore })
   const chatHandlers = createChatHandlers(chat, logger)
   const speaker = createSpeaker({ logger })
   let powerHeld = false
@@ -568,6 +575,51 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({
           kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/debug/chat',
+          handler: async (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            try {
+              const context = await chat.buildContext()
+              jsonResponse(res, 200, { context, length: context.length, debug: chat.debug() })
+            } catch (error) {
+              jsonResponse(res, 500, { error: String(error?.message ?? error) })
+            }
+          },
+        }),
+        'dsh-dafeiyu: debug chat',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/memory',
+          handler: async (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            const memory = config.memoryStore
+            try {
+              if (req.method === 'GET') {
+                jsonResponse(res, 200, { items: memory.list(), path: memory.path })
+                return
+              }
+              if (req.method !== 'POST') return jsonResponse(res, 405, { error: 'method not allowed' })
+              const chunks = []
+              for await (const chunk of req) chunks.push(chunk)
+              const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+              const action = String(body.action ?? '')
+              if (action === 'add') memory.add(body.key, body.value)
+              else if (action === 'remove') memory.remove(body.target)
+              else if (action === 'clear') memory.clear()
+              else return jsonResponse(res, 400, { error: 'action 必须是 add / remove / clear' })
+              jsonResponse(res, 200, { items: memory.list(), path: memory.path })
+            } catch (error) {
+              jsonResponse(res, 400, { error: String(error?.message ?? error) })
+            }
+          },
+        }),
+        'dsh-dafeiyu: memory endpoint',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
           path: '/plugins/dsh-dafeiyu/debug/models',
           handler: async (req, res) => {
             if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
@@ -796,9 +848,10 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
 export function apply(ctx, config = {}) {
   const logger = ctx.logger ?? console
   const novelRoot = asString(config.novelRoot, DEFAULT_NOVEL_ROOT)
+  const memory = createMemoryStore({ logger })
   // Settings is already a declared dependency. Keep observers on this fiber
   // so Loader's fiber-scoped volatile updates reach them.
-  mount(ctx, { ...config, novelRootResolved: novelRoot })
+  mount(ctx, { ...config, novelRootResolved: novelRoot, memoryStore: memory })
   // 降噪能力随伴侣一起安装：denoise_audio 工具（NPSS 核心，本地 CPU）。
   try {
     registerDenoiseTool(ctx, logger)
@@ -809,6 +862,13 @@ export function apply(ctx, config = {}) {
     registerNovelTool(ctx, { logger, root: novelRoot })
   } catch (error) {
     logger.error?.(`dsh-dafeiyu 小说工具挂载失败: ${error?.message ?? error}`)
+  }
+  if (config.memoryEnabled !== false) {
+    try {
+      registerMemoryTool(ctx, { memory, logger })
+    } catch (error) {
+      logger.error?.(`dsh-dafeiyu 记忆工具挂载失败: ${error?.message ?? error}`)
+    }
   }
 }
 
