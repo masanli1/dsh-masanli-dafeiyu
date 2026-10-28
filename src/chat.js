@@ -86,6 +86,44 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
     }
   }
 
+  // 宠物会话必须沿用当前会话的模型选择：新建会话如果落到 "deepseek-official"
+  // 这类需要 API Key 的路由，会直接报 MISSING_CREDENTIAL。
+  const adoptModel = async (sessionId) => {
+    try {
+      const controller = ctx.get?.('sessionController')
+      const query = ctx.get?.('sessionQuery')
+      if (!controller?.selectModel) return
+      let selection
+      const candidates = [targetId, ...sessions.keys()].filter(Boolean)
+      for (const id of candidates) {
+        try {
+          const observation = await query?.observeSession(id)
+          selection = observation?.projections?.values?.modelSelection?.next
+          try { observation?.[Symbol.dispose]?.() } catch {}
+          if (selection?.provider && selection?.model) break
+        } catch {
+          // 忽略单个会话的读取失败
+        }
+      }
+      const catalog = await controller.modelCatalog?.()
+      const groups = catalog?.groups ?? []
+      const providers = new Set(groups.map((group) => group.id))
+      // catalog.default 可能指向需要 API Key 的 “official” 路由；这种情况下退回到
+      // 有凭据的分组（通常是 deepseek-account / 已登录账户）。
+      if (!selection?.provider || !providers.has(selection.provider)) {
+        const preferred = groups.find((group) => /account/i.test(group.id)) ?? groups[0]
+        const model = preferred?.models?.find((item) => item.id === selection?.model)?.id
+          ?? preferred?.models?.[0]?.id
+        if (preferred && model) selection = { provider: preferred.id, model }
+      }
+      if (!selection?.provider || !selection?.model) return
+      await controller.selectModel({ sessionId, provider: selection.provider, model: selection.model })
+      logger.info?.(`dsh-dafeiyu chat: 宠物会话模型 = ${selection.provider}/${selection.model}`)
+    } catch (error) {
+      logger.warn?.(`dsh-dafeiyu chat: 同步模型选择失败: ${error?.message ?? error}`)
+    }
+  }
+
   // 宠物专属会话：第一次聊天时新建，之后一直复用，上下文自然累积。
   const resolveDedicated = async () => {
     if (dedicatedId) return dedicatedId
@@ -98,6 +136,7 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
         try { observation?.[Symbol.dispose]?.() } catch {}
         dedicatedId = stored
         try { await ctx.get?.('sessionController')?.rename?.({ sessionId: stored, title: '和大肥鱼聊天' }) } catch {}
+        await adoptModel(dedicatedId)
         return dedicatedId
       } catch {
         // 旧会话被删了就重建
@@ -109,6 +148,7 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
     dedicatedId = String(created?.sessionId ?? '')
     if (dedicatedId) {
       try { await controller.rename?.({ sessionId: dedicatedId, title: '和大肥鱼聊天' }) } catch {}
+      await adoptModel(dedicatedId)
       writeStore({ dedicatedSessionId: dedicatedId })
     }
     return dedicatedId

@@ -348,3 +348,12 @@ Agent 侧还注册了 `novel` 工具（action：`create / write / append / read 
 
 DSH 0.2 目前没有给插件暴露“会话置顶”接口，所以做不到真正钉在列表顶部；
 分组独立 + 最近活动排序是最接近的效果。
+
+### 宠物会话的模型选择（chat.20）
+
+新建的专属会话如果落到 `deepseek-official`（需要 API Key 的路由），每轮都会报
+`MISSING_CREDENTIAL`，桌宠会显示「任务好像遇到一点问题呢」。
+
+现在 `adoptModel()` 会在创建/复用宠物会话时：优先沿用当前活跃会话的模型选择；
+读不到时退回 catalog 里**确实存在且有凭据的分组**（优先 `deepseek-account`），
+并在日志里打印最终选择。排查用：`GET /plugins/dsh-dafeiyu/debug/models`。

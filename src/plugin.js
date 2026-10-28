@@ -568,6 +568,35 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({
           kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/debug/models',
+          handler: async (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            try {
+              const controller = ctx.get?.('sessionController')
+              const catalog = await controller?.modelCatalog?.()
+              const state = await chat.state()
+              let selection
+              const query = ctx.get?.('sessionQuery')
+              if (state.sessionId && query?.observeSession) {
+                const observation = await query.observeSession(state.sessionId)
+                selection = observation?.projections?.values?.modelSelection?.next
+                try { observation?.[Symbol.dispose]?.() } catch {}
+              }
+              jsonResponse(res, 200, {
+                default: catalog?.default ?? null,
+                groups: (catalog?.groups ?? []).map((group) => ({ id: group.id, models: (group.models ?? []).map((m) => m.id) })),
+                session: { id: state.sessionId, selection: selection ?? null },
+              })
+            } catch (error) {
+              jsonResponse(res, 500, { error: String(error?.message ?? error) })
+            }
+          },
+        }),
+        'dsh-dafeiyu: debug models',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
           path: '/plugins/dsh-dafeiyu/novel/books',
           handler: (req, res) => {
             if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
