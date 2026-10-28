@@ -54,7 +54,7 @@ def band_edges(n=BANDS, lo=80.0, hi=7500.0):
     return np.geomspace(lo, hi, n + 1)
 
 
-def band_energies(x, n=BANDS, chunk_seconds=1.0):
+def band_energies(x, n=BANDS, chunk_seconds=1.0, vocal_focus=False):
     """按 1 秒切片算频段能量再取中位数，避免音乐/伴奏或单个爆音主导包络。"""
     size = max(int(SR * chunk_seconds), 1024)
     edges = band_edges(n)
@@ -73,6 +73,15 @@ def band_energies(x, n=BANDS, chunk_seconds=1.0):
     if not frames:
         frames = [np.ones(n)]
     stacked = np.asarray(frames, dtype=np.float64)
+    if vocal_focus and len(stacked) >= 3:
+        # 挑「人声占优」的帧：300–3500 Hz 的能量相对 60–250 Hz 越强越像清唱段
+        edges = band_edges(n)
+        centers = np.sqrt(edges[:-1] * edges[1:])
+        vocal = stacked[:, (centers >= 300) & (centers <= 3500)].sum(axis=1)
+        low = stacked[:, centers < 250].sum(axis=1)
+        ratio = vocal / (low + 1e-12)
+        keep = np.argsort(ratio)[-max(3, int(len(ratio) * 0.6)):]
+        stacked = stacked[keep]
     pooled = np.median(stacked, axis=0)
     return np.log10(pooled + 1e-12)
 
@@ -148,7 +157,7 @@ def fit_bands(drive, S0, S1, target, rounds, seed=0):
 
 def cmd_learn(args):
     x = decode(args.wav)
-    target = band_energies(x)
+    target = band_energies(x, vocal_focus=args.vocal_focus)
     os.makedirs(os.path.join(VOICES, args.name), exist_ok=True)
     rng = np.random.default_rng(0)
     S0 = rng.choice(STATES, size=(784, 64)).astype(np.int8)
@@ -222,6 +231,7 @@ def main():
     p.add_argument("--wav", required=True)
     p.add_argument("--name", required=True)
     p.add_argument("--rounds", type=int, default=12)
+    p.add_argument("--vocal-focus", action="store_true", help="只取人声占优的帧（适合歌曲混音）")
     p.set_defaults(func=cmd_learn)
 
     p = sub.add_parser("speak")
