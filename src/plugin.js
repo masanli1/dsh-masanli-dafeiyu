@@ -413,6 +413,10 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
 
   // 说话 + 气泡：她要说的每一句都能在气泡里看到。
   const pulse = (text, state = 'SUCCESS') => {
+    // 独立气泡通道：不跟任务状态气泡抢位置
+    try {
+      eventStream.broadcast(createMessage(CompanionMessageKind.SAY, { message: text, ttlMs: 9000 }))
+    } catch {}
     try {
       bridge?.send(createMessage(CompanionMessageKind.PULSE, {
         state, message: text, detail: '大肥鱼', ttlMs: 6000, resumeState: 'IDLE',
