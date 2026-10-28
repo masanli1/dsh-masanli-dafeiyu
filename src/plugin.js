@@ -13,6 +13,8 @@ import { apply as registerDenoiseTool, createDenoiseTool, findPython, findFfmpeg
 import { createDenoiseJobs } from './denoise-jobs.js'
 import { createPowerKeeper } from './power.js'
 import { createMemoryStore, registerMemoryTool } from './memory.js'
+import { createMoodStore } from './mood.js'
+import { rememberFacts, extractFacts } from './memory-auto.js'
 import { registerTeslaTool, listSkills, TESLA_CLI, VOICE_CLI, VOICES_DIR } from './tesla.js'
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
@@ -328,7 +330,13 @@ function mount(ctx, config = {}, eventCtx = ctx) {
 function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   const eventStream = createEventStream()
   const settings = createSettingsScope(ctx, Config, config, publicConfig)
-  const chat = createChatService({ ctx, logger, config: () => settings.get(), memory: config.memoryStore })
+  const mood = createMoodStore({ logger })
+  mood.tick()
+  const moodTimer = setInterval(() => { try { mood.tick() } catch {} }, 5 * 60 * 1000)
+  if (typeof moodTimer.unref === 'function') moodTimer.unref()
+  const PRAISE = /(可爱|好乖|真棒|厉害|喜欢你|好看|漂亮|聪明|谢谢大肥鱼|辛苦了)/
+  const FEED = /(吃饭|喂你|给你吃|零食|喝点)/
+  const chat = createChatService({ ctx, logger, config: () => settings.get(), memory: config.memoryStore, mood })
   const chatHandlers = createChatHandlers(chat, logger)
   const ffmpegCandidates = () => [
     process.env.DF_FACTORY_FFMPEG,
@@ -391,6 +399,23 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
     isBusy: () => activeTurns > 0,
     logger,
   })
+
+  // 主动行为：不再固定"一天三问"，而是按"多久没聊 + 当前状态"决定要不要冒泡。
+  let lastProactive = 0
+  const proactiveTimer = setInterval(() => {
+    try {
+      const snap = mood.tick()
+      if (activeTurns > 0) return
+      const current = settings.get()
+      if (current.enabled === false || current.greetingEnabled === false) return
+      if (Date.now() - lastProactive < 3 * 3600 * 1000) return
+      const due = (snap.daysSinceChat ?? 0) >= 2 || snap.hunger >= 0.8 || snap.sleepiness >= 0.85
+      if (!due) return
+      lastProactive = Date.now()
+      greeter.greet()
+    } catch {}
+  }, 10 * 60 * 1000)
+  if (typeof proactiveTimer.unref === 'function') proactiveTimer.unref()
 
   let bridge
   let reducer
@@ -511,8 +536,28 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   // session bus: a throw here could stop every other subscriber from seeing
   // the event, which would look exactly like "installing the pet broke other
   // plugins".
+  const eventStats = { total: 0, userMessage: 0, lastType: '', lastError: '' }
   const offEvent = eventCtx.on('session/event', (session, event) => {
+    eventStats.total += 1
+    eventStats.lastType = event?.type ?? ''
+    if (event?.type === 'user/message') eventStats.userMessage += 1
     chat.note(session, event)
+    if (event?.type === 'user/message') {
+      let text = ''
+      try {
+        const raw = event.data?.content
+        text = Array.isArray(raw) ? raw.map((part) => (typeof part === 'string' ? part : part?.text ?? '')).join(' ') : String(raw ?? '')
+      } catch { text = '' }
+      try {
+        mood.poke('chat')
+        if (PRAISE.test(text)) mood.poke('praise')
+        else if (FEED.test(text)) mood.poke('feed')
+        if (config.memoryStore && text) {
+          const result = rememberFacts(config.memoryStore, text)
+          if (result.added.length) logger.info?.(`dsh-dafeiyu 自动记忆: ${result.added.map((f) => f.key + '=' + f.value).join('、')}`)
+        }
+      } catch {}
+    }
     if (event?.type === 'turn/start') { activeTurns += 1; syncPower() }
     if (event?.type === 'turn/end') { activeTurns = Math.max(0, activeTurns - 1); syncPower() }
     if (event?.type !== 'turn/end') greeter.noteActivity()
@@ -603,6 +648,53 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({ kind: 'exact', path: CHAT_TARGET_ENDPOINT, handler: chatHandlers.target }),
         'dsh-dafeiyu: local chat target endpoint',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/debug/events',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            jsonResponse(res, 200, { ...eventStats, mood: mood.snapshot() })
+          },
+        }),
+        'dsh-dafeiyu: debug events',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/debug/memory-extract',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            const url = new URL(req.url ?? '/', 'http://127.0.0.1')
+            jsonResponse(res, 200, { facts: extractFacts(url.searchParams.get('text') ?? '') })
+          },
+        }),
+        'dsh-dafeiyu: memory extract',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/mood',
+          handler: async (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            try {
+              if (req.method === 'GET') {
+                jsonResponse(res, 200, mood.tick())
+                return
+              }
+              if (req.method !== 'POST') return jsonResponse(res, 405, { error: 'method not allowed' })
+              const chunks = []
+              for await (const chunk of req) chunks.push(chunk)
+              const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+              const action = String(body.action ?? '')
+              jsonResponse(res, 200, mood.poke(action === 'feed' ? 'feed' : action === 'play' ? 'play' : action === 'praise' ? 'praise' : 'seen'))
+            } catch (error) {
+              jsonResponse(res, 500, { error: String(error?.message ?? error) })
+            }
+          },
+        }),
+        'dsh-dafeiyu: mood',
       )
       httpCtx.effect(
         () => httpCtx.webServer.register({

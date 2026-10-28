@@ -68,7 +68,9 @@ const CHAT_STORE = join(homedir(), '.dsh', 'dsh-dafeiyu-chat.json')
 // 和工作会话彻底分开，不会互相挤位置。
 export const PET_WORKSPACE = join(homedir(), 'Documents', '大肥鱼聊天')
 
-export function createChatService({ ctx, logger = console, config = () => ({}), storePath = CHAT_STORE, memory } = {}) {
+import { rememberFacts } from './memory-auto.js'
+
+export function createChatService({ ctx, logger = console, config = () => ({}), storePath = CHAT_STORE, memory, mood } = {}) {
   const sessions = new Map()
   let targetId
   let manualTarget = ''
@@ -329,6 +331,18 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
     if (!value) throw new Error('消息不能为空')
     const id = await targetForUse()
     if (!id) throw new Error('先在面板顶部选一个会话，再发送')
+    // 面板发出的消息直接在这里落状态：这样不依赖 session/event 总线是否转发 user/message。
+    try {
+      mood?.poke?.('chat')
+      if (/(可爱|好乖|真棒|厉害|喜欢你|好看|漂亮|聪明)/.test(value)) mood?.poke?.('praise')
+      else if (/(吃饭|喂你|给你吃|零食)/.test(value)) mood?.poke?.('feed')
+    } catch {}
+    try {
+      if (memory) {
+        const result = rememberFacts(memory, value)
+        if (result.added.length) logger.info?.(`dsh-dafeiyu 自动记忆: ${result.added.map((f) => f.key + '=' + f.value).join('、')}`)
+      }
+    } catch {}
     const context = await buildContext()
     const controller = ctx.get?.('sessionController')
     if (!controller?.prompt) throw new Error('当前 Host 没有提供会话写入服务')
