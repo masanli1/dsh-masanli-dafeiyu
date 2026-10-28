@@ -11,7 +11,7 @@ export function createSpeaker({
   sayPath = '/usr/bin/say',
   platform = process.platform,
   // 音色：给出 applyEnvelope 时，先合成到临时文件、整形、再播放
-  preset = '',
+  preset: factoryPreset = '',
   applyEnvelope = null,
   afplayPath = '/usr/bin/afplay',
 } = {}) {
@@ -28,7 +28,7 @@ export function createSpeaker({
     }
   }
 
-  const speak = (text, { voice, rate, volume } = {}) => {
+  const speak = (text, { voice, rate, volume, preset: callPreset = '' } = {}) => {
     const line = String(text ?? '').replace(/\s+/g, ' ').trim()
     if (!line || platform !== 'darwin') return false
     stop()
@@ -40,6 +40,7 @@ export function createSpeaker({
     const body = Number.isFinite(gain) && gain > 0 && gain < 1 ? `[[volm ${gain.toFixed(2)}]]${line}` : line
 
     // 有音色预设：say 到文件 → 频响整形 → 播放整形的结果
+    const preset = callPreset || factoryPreset
     if (preset && typeof applyEnvelope === 'function') {
       let dir
       try {

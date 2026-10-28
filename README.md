@@ -538,3 +538,17 @@ tesla action=replicate target=5 name=big5 hidden=256 out=48 rounds=5
 
 **说明**：这是「音色包络」不是声音克隆——只调频谱，不复制发音习惯，
 个人本机自用；要更像，需要**干净的人声素材**（无伴奏/清唱），相关性会明显提高。
+
+## 语音链路修复（chat.31）
+
+「设置里选了音色但没声音/还是原声」的三处原因，都已修：
+
+1. `plugin.js` 里 `applyEnvelope` 用了 `findPython/findFfmpeg` 却没 import → 抛错后走回退，音色从未生效；
+2. `findFfmpeg()` 在这台机器上找不到 ffmpeg → 现在按优先级找：环境变量 → App 自带 → imageio 自带；
+3. `speech.js` 被 Node ESM 缓存，改名 `speech-v2.js` 强制重新加载。
+
+排查端点（仅本机）：
+
+- `GET /plugins/dsh-dafeiyu/debug/voice` — 当前 preset 原值与解析结果
+- `GET /plugins/dsh-dafeiyu/debug/envelope` — 跑一次包络整形，返回 ok/错误
+- `GET /plugins/dsh-dafeiyu/debug/speak` — 用当前音色说一句

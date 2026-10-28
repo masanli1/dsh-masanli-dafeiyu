@@ -8,13 +8,14 @@ import { HelperProcess } from './helper-process.js'
 import { createSettingsScope } from './settings-scope.js'
 import { createChatHandlers, createChatService } from './chat.js'
 import { createGreeter } from './greeter.js'
-import { createSpeaker } from './speech.js'
-import { apply as registerDenoiseTool, createDenoiseTool } from './denoise.js'
+import { createSpeaker } from './speech-v2.js'
+import { apply as registerDenoiseTool, createDenoiseTool, findPython, findFfmpeg } from './denoise.js'
 import { createDenoiseJobs } from './denoise-jobs.js'
 import { createPowerKeeper } from './power.js'
 import { createMemoryStore, registerMemoryTool } from './memory.js'
 import { registerTeslaTool, listSkills, TESLA_CLI, VOICE_CLI, VOICES_DIR } from './tesla.js'
 import { spawn } from 'node:child_process'
+import { homedir } from 'node:os'
 import { existsSync as fileExists, readFileSync as readFileSyncImpl, readdirSync as readdirSyncImpl } from 'node:fs'
 import { join as joinPath } from 'node:path'
 import { DEFAULT_NOVEL_ROOT, createNovelService, registerNovelTool } from './novel.js'
@@ -329,9 +330,18 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   const settings = createSettingsScope(ctx, Config, config, publicConfig)
   const chat = createChatService({ ctx, logger, config: () => settings.get(), memory: config.memoryStore })
   const chatHandlers = createChatHandlers(chat, logger)
+  const ffmpegCandidates = () => [
+    process.env.DF_FACTORY_FFMPEG,
+    joinPath(homedir(), 'Applications/大肥鱼播放器.app/Contents/Resources/bin/ffmpeg'),
+    joinPath(homedir(), '.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/python/lib/python3.12/site-packages/imageio_ffmpeg/binaries/ffmpeg-macos-aarch64-v7.1'),
+  ].filter(Boolean)
+
   const applyEnvelope = async (preset, input, output) => {
     const python = (await findPython({ logger })).bin
-    const ffmpeg = await findFfmpeg(python, {})
+    let ffmpeg = ffmpegCandidates().find((path) => fileExists(path))
+    if (!ffmpeg) {
+      try { ffmpeg = await findFfmpeg(python, {}) } catch { ffmpeg = 'ffmpeg' }
+    }
     await new Promise((resolve, reject) => {
       const child = spawn(python, [VOICE_CLI, 'apply', '--voice', preset, '--in', input, '--out', output], {
         stdio: ['ignore', 'ignore', 'pipe'],
@@ -593,6 +603,52 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({ kind: 'exact', path: CHAT_TARGET_ENDPOINT, handler: chatHandlers.target }),
         'dsh-dafeiyu: local chat target endpoint',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/debug/envelope',
+          handler: async (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            try {
+              const preset = asString(settings.get()?.voicePreset, '')
+              await applyEnvelope(preset, '/tmp/t2.aiff', '/tmp/envelope-out.wav')
+              jsonResponse(res, 200, { ok: true, preset })
+            } catch (error) {
+              jsonResponse(res, 500, { ok: false, preset: asString(settings.get()?.voicePreset, ''), error: String(error?.message ?? error) })
+            }
+          },
+        }),
+        'dsh-dafeiyu: debug envelope',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/debug/speak',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            const preset = asString(settings.get()?.voicePreset, '')
+            const started = speaker.speak('这是音色测试', { voice: 'Tingting', rate: 180, volume: 0.9, preset })
+            jsonResponse(res, 200, { preset, started })
+          },
+        }),
+        'dsh-dafeiyu: debug speak',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/debug/voice',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            const raw = settings.get()?.voicePreset
+            jsonResponse(res, 200, {
+              raw, type: typeof raw,
+              keys: raw && typeof raw === 'object' ? Object.keys(raw) : [],
+              resolved: asString(raw, ''),
+            })
+          },
+        }),
+        'dsh-dafeiyu: debug voice',
       )
       httpCtx.effect(
         () => httpCtx.webServer.register({
