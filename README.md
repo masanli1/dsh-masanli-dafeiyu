@@ -382,3 +382,26 @@ DSH 0.2 目前没有给插件暴露“会话置顶”接口，所以做不到真
 - `GET /plugins/dsh-dafeiyu/memory` 记忆列表
 - `GET /plugins/dsh-dafeiyu/debug/chat` 本次会注入的上下文（含跟踪到的会话）
 - `GET /plugins/dsh-dafeiyu/debug/models` 模型 catalog 与会话当前选择
+
+## 特斯拉阀 · 复刻（chat.23）
+
+把 `tesla_valve_v2`（三元阀阵 + 水塔网络）搬进插件，并加了一层「复刻」能力。
+
+- 代码：`python/tesla/`（ternary / valve / towers / encoding / impact + MNIST 测试集与已训练阀态）
+- 技能目录：`~/Documents/大肥鱼技能/<名字>/{state.npz, meta.json}`
+
+### 工具 `tesla`
+
+| action | 作用 |
+|---|---|
+| `simulate` | 跑一个样本，返回 24 维出口水位向量与判定 |
+| `replicate` | **复刻**：给定目标数字，逐轮试阀——每条边试「开 / 关 / 换向」，只保留让目标 margin 变好的改动，记录每轮试开/试关多少条边，最后把阀态存成一项学会的功能 |
+| `use` | 用某项学会的功能跑样本 |
+| `skills` | 列出已学会的功能 |
+
+复刻的思想：不重训整个网络，而是**从当前阀态出发做局部搜索**，像人一样
+"这里该开、那里该关"一点点往前推，把能复现目标结果的那套阀态固化下来。
+
+```text
+GET /plugins/dsh-dafeiyu/tesla/skills   # 列出技能
+```

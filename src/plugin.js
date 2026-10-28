@@ -13,6 +13,7 @@ import { apply as registerDenoiseTool, createDenoiseTool } from './denoise.js'
 import { createDenoiseJobs } from './denoise-jobs.js'
 import { createPowerKeeper } from './power.js'
 import { createMemoryStore, registerMemoryTool } from './memory.js'
+import { registerTeslaTool, listSkills, TESLA_CLI } from './tesla.js'
 import { DEFAULT_NOVEL_ROOT, createNovelService, registerNovelTool } from './novel.js'
 import { resolveClientTarget } from './client-target.js'
 import { isLocalRequest, jsonResponse } from './local-http.js'
@@ -575,6 +576,21 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({
           kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/tesla/skills',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            try {
+              jsonResponse(res, 200, { skills: listSkills(), cli: TESLA_CLI })
+            } catch (error) {
+              jsonResponse(res, 500, { error: String(error?.message ?? error) })
+            }
+          },
+        }),
+        'dsh-dafeiyu: tesla skills',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
           path: '/plugins/dsh-dafeiyu/debug/chat',
           handler: async (req, res) => {
             if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
@@ -862,6 +878,11 @@ export function apply(ctx, config = {}) {
     registerNovelTool(ctx, { logger, root: novelRoot })
   } catch (error) {
     logger.error?.(`dsh-dafeiyu 小说工具挂载失败: ${error?.message ?? error}`)
+  }
+  try {
+    registerTeslaTool(ctx, { logger })
+  } catch (error) {
+    logger.error?.(`dsh-dafeiyu 特斯拉阀工具挂载失败: ${error?.message ?? error}`)
   }
   if (config.memoryEnabled !== false) {
     try {
