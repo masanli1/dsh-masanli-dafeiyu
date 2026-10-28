@@ -42,15 +42,37 @@ def load_data():
     return encode(X), y
 
 
-def load_baseline():
+def load_baseline(hidden=None, out=None):
     d = np.load(MODEL)
     st, N_IN = d["state"], int(d["N_IN"] if "N_IN" in d.files else 49)
-    S0 = st[:N_IN * HID].reshape(N_IN, HID).astype(np.int8)
-    S1 = st[N_IN * HID:].reshape(HID, OUT).astype(np.int8)
+    H = int(hidden or HID)
+    O = int(out or OUT)
+    if H == HID and O == OUT:
+        S0 = st[:N_IN * HID].reshape(N_IN, HID).astype(np.int8)
+        S1 = st[N_IN * HID:].reshape(HID, OUT).astype(np.int8)
+        return S0, S1
+    # 规模不同：按目标尺寸随机初始化（更大的网络装更大的程序）
+    rng = np.random.default_rng(0)
+    return (rng.choice(STATES, size=(N_IN, H)).astype(np.int8),
+            rng.choice(STATES, size=(H, O)).astype(np.int8))
+
+
+def build_state(source, hidden=None, out=None):
+    if source and source not in ("baseline", "random", "zero"):
+        path = os.path.join(source, "state.npz") if os.path.isdir(source) else os.path.join(PROGRAMS, source, "state.npz")
+        d = np.load(path)
+        return d["S0"].astype(np.int8), d["S1"].astype(np.int8)
+    S0, S1 = load_baseline(hidden, out)
+    if source == "random":
+        rng = np.random.default_rng(0)
+        return rng.choice(STATES, size=S0.shape).astype(np.int8), rng.choice(STATES, size=S1.shape).astype(np.int8)
+    if source == "zero":
+        return np.zeros_like(S0), np.zeros_like(S1)
     return S0, S1
 
 
 def run_state(X, S0, S1):
+    # towers.run 的第二层出口数由 S1.shape[1] 决定，所以放大规模时这里自然适配
     return np.vstack([towers.run(X[i:i + BATCH], S0, S1)[1] for i in range(0, len(X), BATCH)]).astype(np.float32)
 
 
@@ -95,7 +117,7 @@ def score_batch(L, y, target):
 def cmd_replicate(args):
     X, y = load_data()
     rng = np.random.default_rng(args.seed)
-    S0, S1 = load_baseline()
+    S0, S1 = build_state(args.source, getattr(args, "hidden", None), getattr(args, "out", None))
     target = int(args.target)
 
     idx_t = np.flatnonzero(y == target)[: args.samples // 2]
@@ -108,8 +130,9 @@ def cmd_replicate(args):
 
     best_score, best_acc = evaluate(S0, S1)
     best = (S0.copy(), S1.copy())
-    emit({"round": 0, "score": round(best_score, 5), "acc": round(best_acc, 4),
-          "event": "start", "target": target, "samples": int(len(idx))})
+    emit({"round": 0, "score": round(best_score, 5), "acc": round(best_acc, 4), "event": "start",
+          "target": target, "samples": int(len(idx)), "shape": [int(S0.shape[0]), int(S0.shape[1]), int(S1.shape[1])],
+          "edges": int(S0.size + S1.size)})
 
     trace = []
     n_edges = int(S0.size + S1.size)
@@ -142,11 +165,11 @@ def cmd_replicate(args):
             trace.append(entry)
             emit(entry)
 
-    out_dir = args.out or os.path.expanduser(os.path.join("~", "Documents", "大肥鱼技能", args.name))
+    out_dir = getattr(args, "out_dir_arg", None) or os.path.expanduser(os.path.join("~", "Documents", "大肥鱼技能", args.name))
     out_dir = os.path.abspath(out_dir)
     os.makedirs(out_dir, exist_ok=True)
     np.savez_compressed(os.path.join(out_dir, "state.npz"), S0=best[0], S1=best[1],
-                        target=target, score=best_score, acc=best_acc, H=HID, OUT=OUT)
+                        target=target, score=best_score, acc=best_acc, H=int(S1.shape[0]), OUT=int(S1.shape[1]))
     meta = {
         "name": args.name, "kind": "tesla-replicate", "target": target,
         "score": round(best_score, 5), "accuracy": round(best_acc, 4),
@@ -203,13 +226,9 @@ def save_examples(name, payload):
 
 def resolve_state(source):
     if not source or source == "baseline":
-        return load_baseline()
+        return build_state(None)
     if source in ("random", "zero"):
-        S0, S1 = load_baseline()
-        rng = np.random.default_rng(0)
-        if source == "zero":
-            return np.zeros_like(S0), np.zeros_like(S1)
-        return rng.choice(STATES, size=S0.shape).astype(np.int8), rng.choice(STATES, size=S1.shape).astype(np.int8)
+        return build_state(source)
     path = os.path.join(source, "state.npz") if os.path.isdir(source) else os.path.join(PROGRAMS, source, "state.npz")
     d = np.load(path)
     return d["S0"].astype(np.int8), d["S1"].astype(np.int8)
@@ -365,7 +384,7 @@ def cmd_compile(args):
     Xte, Yte = compile_spec(spec, holdout, args.seed + 1)
     # 目标输出的量级要和阀网实际出口的量级对齐：先空跑一遍起始阀态，
     # 取它输出的均值和标准差做仿射映射，归一化参数存进 meta。
-    _S0, _S1 = resolve_state(args.source)
+    _S0, _S1 = build_state(args.source, getattr(args, "hidden", None), getattr(args, "out", None))
     L0 = run_state(Xtr, _S0, _S1)
     Y_mean = float(Ytr.mean())
     Y_std = float(Ytr.std()) or 1.0
@@ -385,7 +404,7 @@ def cmd_compile(args):
     ]
     save_examples(name, {"name": name, "spec": spec, "examples": examples})
 
-    S0, S1 = resolve_state(args.source)
+    S0, S1 = build_state(args.source, getattr(args, "hidden", None), getattr(args, "out", None))
     rng = np.random.default_rng(args.seed)
 
     def mse(a, b, X, Y):
@@ -422,7 +441,7 @@ def cmd_compile(args):
     baseline_held = mse(S0, S1, Xte, Yte_n)
     variance = float(np.mean((Yte_n - Yte_n.mean()) ** 2)) or 1e-12
     np.savez_compressed(os.path.join(program_dir(name), "state.npz"),
-                        S0=best_state[0], S1=best_state[1], H=HID, OUT=OUT)
+                        S0=best_state[0], S1=best_state[1], H=int(S1.shape[0]), OUT=int(S1.shape[1]))
     meta = {
         "name": name, "kind": "tesla-compiled-program",
         "program": spec.get("name") or name, "expr": spec.get("expr"),
@@ -455,7 +474,10 @@ def main():
     p.add_argument("--candidates", type=int, default=4)
     p.add_argument("--samples", type=int, default=48)
     p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--out", default=None)
+    p.add_argument("--source", default=None, help="起始阀态：baseline / random / zero / 技能名")
+    p.add_argument("--hidden", type=int, default=None, help="隐藏塔数量（默认 64）")
+    p.add_argument("--out", type=int, default=None, help="出口塔数量（默认 24）")
+    p.add_argument("--out-dir", dest="out_dir_arg", default=None)
     p.set_defaults(func=cmd_replicate)
 
     p = sub.add_parser("program")
@@ -479,6 +501,8 @@ def main():
     p.add_argument("--candidates", type=int, default=6)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--source", default=None)
+    p.add_argument("--hidden", type=int, default=None)
+    p.add_argument("--out", type=int, default=None)
     p.set_defaults(func=cmd_compile)
 
     p = sub.add_parser("use")

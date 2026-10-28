@@ -65,6 +65,8 @@ export function registerTeslaTool(ctx, { logger = console } = {}) {
         rounds: { type: 'integer', description: 'replicate 轮数，默认 12' },
         skill: { type: 'string', description: 'use 时用哪项功能（skills 里列出的名字）' },
         samples: { type: 'array', items: { type: 'integer' }, description: 'program-record 时要记录的样本序号' },
+        hidden: { type: 'integer', description: '隐藏塔数量（规模）：默认 64，程序更大就调大，如 128 / 256' },
+        out: { type: 'integer', description: '出口塔数量：默认 24' },
         source: { type: 'string', description: '录制/拟合的起点：baseline、random、zero、技能名或程序名' },
         spec: {
           type: 'object',
@@ -155,9 +157,12 @@ export function registerTeslaTool(ctx, { logger = console } = {}) {
         const specPath = join(homedir(), '.cache', `dfy-tesla-${Date.now()}.json`)
         try { mkdirSync(dirname(specPath), { recursive: true }) } catch {}
         writeFileSync(specPath, JSON.stringify({ name, ...args.spec }, null, 2))
+        const scale = []
+        if (args.hidden) scale.push('--hidden', String(args.hidden))
+        if (args.out) scale.push('--out', String(args.out))
         const lines = await runCli(python, ['compile', '--spec', specPath, '--name', name,
           '--samples', String(args.samples ?? 32), '--rounds', String(args.rounds ?? 10),
-          ...(args.source ? ['--source', String(args.source)] : [])], { timeoutMs: 1800000 })
+          ...(args.source ? ['--source', String(args.source)] : []), ...scale], { timeoutMs: 1800000 })
         const done = lines.find((line) => line.event === 'compiled') ?? {}
         const trace = lines.filter((line) => line.event !== 'compiled')
         const opened = trace.reduce((sum, entry) => sum + (entry.opened ?? 0), 0)
@@ -193,7 +198,10 @@ export function registerTeslaTool(ctx, { logger = console } = {}) {
         const target = Number(args.target)
         if (!Number.isInteger(target) || target < 0 || target > 9) throw new Error('target 必须是 0–9')
         const name = String(args.name ?? `digit-${target}`).replace(/[^\w.\-\u4e00-\u9fa5]+/g, '-')
-        const lines = await runCli(python, ['replicate', '--target', String(target), '--name', name, '--rounds', String(args.rounds ?? 12)], { timeoutMs: 900000 })
+        const scale = []
+        if (args.hidden) scale.push('--hidden', String(args.hidden))
+        if (args.out) scale.push('--out', String(args.out))
+        const lines = await runCli(python, ['replicate', '--target', String(target), '--name', name, '--rounds', String(args.rounds ?? 12), ...(args.source ? ['--source', String(args.source)] : []), ...scale], { timeoutMs: 1800000 })
         const done = lines.find((line) => line.event === 'done') ?? {}
         const trace = lines.filter((line) => line.event !== 'done')
         const opened = trace.reduce((sum, entry) => sum + (entry.opened ?? 0), 0)
