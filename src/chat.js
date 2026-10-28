@@ -64,6 +64,9 @@ export function messagesFromEvents(events) {
 }
 
 const CHAT_STORE = join(homedir(), '.dsh', 'dsh-dafeiyu-chat.json')
+// 宠物聊天单独放一个工作区目录：侧边栏会因此多出一条「大肥鱼聊天」分组，
+// 和工作会话彻底分开，不会互相挤位置。
+export const PET_WORKSPACE = join(homedir(), 'Documents', '大肥鱼聊天')
 
 export function createChatService({ ctx, logger = console, config = () => ({}), storePath = CHAT_STORE }) {
   const sessions = new Map()
@@ -101,7 +104,8 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
       }
     }
     if (!controller?.create) return ''
-    const created = await controller.create({ cwd: homedir() })
+    try { mkdirSync(PET_WORKSPACE, { recursive: true }) } catch {}
+    const created = await controller.create({ cwd: PET_WORKSPACE })
     dedicatedId = String(created?.sessionId ?? '')
     if (dedicatedId) {
       try { await controller.rename?.({ sessionId: dedicatedId, title: '和大肥鱼聊天' }) } catch {}
