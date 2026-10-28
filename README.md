@@ -552,3 +552,11 @@ tesla action=replicate target=5 name=big5 hidden=256 out=48 rounds=5
 - `GET /plugins/dsh-dafeiyu/debug/voice` — 当前 preset 原值与解析结果
 - `GET /plugins/dsh-dafeiyu/debug/envelope` — 跑一次包络整形，返回 ok/错误
 - `GET /plugins/dsh-dafeiyu/debug/speak` — 用当前音色说一句
+
+## 音色下拉 + 试听（chat.32）
+
+设置 → 大肥鱼 → 语音说话 → **自定义音色**：
+
+- 下拉列出全部已学会音色（带 MSE），第一项是「原声（默认）」；
+- 右侧 **试听** 按钮用当前选中的音色说一句示例（不改变已保存设置）；
+- 接口：`POST /plugins/dsh-dafeiyu/voice/preview {voice}`。

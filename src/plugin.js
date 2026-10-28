@@ -607,6 +607,33 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({
           kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/voice/preview',
+          handler: async (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            if (req.method !== 'POST') return jsonResponse(res, 405, { error: 'method not allowed' })
+            try {
+              const chunks = []
+              for await (const chunk of req) chunks.push(chunk)
+              const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+              const preset = String(body.voice ?? '')
+              const live = settings.get()
+              const started = speaker.speak(String(body.text ?? '大肥鱼现在用的是这个音色，你听听看。'), {
+                voice: asString(live?.voiceName, 'Tingting'),
+                rate: Number(live?.voiceRate ?? 180),
+                volume: Number(live?.voiceVolume ?? 0.9),
+                preset,
+              })
+              jsonResponse(res, 200, { started, preset })
+            } catch (error) {
+              jsonResponse(res, 500, { error: String(error?.message ?? error) })
+            }
+          },
+        }),
+        'dsh-dafeiyu: voice preview',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
           path: '/plugins/dsh-dafeiyu/debug/envelope',
           handler: async (req, res) => {
             if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
