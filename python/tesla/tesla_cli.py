@@ -329,6 +329,116 @@ def cmd_program(args):
 
     raise SystemExit("program 需要 --record / --fit / --run / --list 之一")
 
+
+
+# ---------------------------------------------------------------- 程序编译
+# 传入「一个程序 + 数据」：程序用表达式描述（输入 784 维向量 x，输出 24 维），
+# 自动生成数据、记录，再学出阀态，最后在没见过的输入上测保真度。
+# 相当于把这段程序“编译”成一份阀的位置参数。
+
+def compile_spec(spec, count, seed):
+    rng = np.random.default_rng(seed)
+    expr = spec["expr"]
+    out_dim = int(spec.get("output_dim", 24))
+    x = rng.random((count, 784)).astype(np.float32)
+    env = {"np": np, "x": x, "x0": x[0], "n": count}
+    try:
+        # 本地可信输入：只放开 __import__，numpy 内部偶尔会用到它
+        value = eval(expr, {"__builtins__": {"__import__": __import__}}, env)  # noqa: S307
+    except Exception as error:  # noqa: BLE001
+        raise SystemExit(f"程序表达式执行失败：{error}")
+    value = np.asarray(value, dtype=np.float32)
+    if value.ndim == 1 and value.shape[0] == count:
+        value = np.repeat(value[:, None], out_dim, axis=1)
+    elif value.ndim == 1:
+        value = np.repeat(value[None, :out_dim], count, axis=0)
+    return x, value[:, :out_dim]
+
+
+def cmd_compile(args):
+    with open(args.spec, encoding="utf-8") as handle:
+        spec = json.load(handle)
+    name = args.name or spec.get("name") or "program"
+    train_count = int(args.samples)
+    holdout = int(args.holdout)
+    Xtr, Ytr = compile_spec(spec, train_count, args.seed)
+    Xte, Yte = compile_spec(spec, holdout, args.seed + 1)
+    # 目标输出的量级要和阀网实际出口的量级对齐：先空跑一遍起始阀态，
+    # 取它输出的均值和标准差做仿射映射，归一化参数存进 meta。
+    _S0, _S1 = resolve_state(args.source)
+    L0 = run_state(Xtr, _S0, _S1)
+    Y_mean = float(Ytr.mean())
+    Y_std = float(Ytr.std()) or 1.0
+    L_mean = float(L0.mean())
+    L_std = float(L0.std()) or 5e-5
+    def normalize(Y):
+        return ((Y - Y_mean) / Y_std * L_std + L_mean).astype(np.float32)
+    Ytr_n, Yte_n = normalize(Ytr), normalize(Yte)
+
+    os.makedirs(program_dir(name), exist_ok=True)
+    examples = [
+        {"sample": index, "label": -1,
+         "input": [round(float(v), 6) for v in Xtr[index]],
+         "output": [round(float(v), 6) for v in Ytr_n[index]],
+         "source": "compiled:" + (spec.get("name") or name)}
+        for index in range(train_count)
+    ]
+    save_examples(name, {"name": name, "spec": spec, "examples": examples})
+
+    S0, S1 = resolve_state(args.source)
+    rng = np.random.default_rng(args.seed)
+
+    def mse(a, b, X, Y):
+        return float(np.mean((run_state(X, a, b) - Y) ** 2))
+
+    best = mse(S0, S1, Xtr, Ytr_n)
+    best_state = (S0.copy(), S1.copy())
+    emit({"event": "start", "mse": round(best, 8), "examples": train_count})
+    flat0 = np.concatenate([S0.ravel(), S1.ravel()])
+    per_round = max(16, flat0.size // 400)
+    trace = []
+    for round_index in range(1, args.rounds + 1):
+        accepted = None
+        for _ in range(args.candidates):
+            a, b = best_state[0].copy(), best_state[1].copy()
+            flat = np.concatenate([a.ravel(), b.ravel()])
+            pick = rng.choice(flat.size, per_round, replace=False)
+            before = flat[pick].copy()
+            flat[pick] = rng.choice(STATES, per_round)
+            candidate = mse(flat[: a.size].reshape(a.shape), flat[a.size:].reshape(b.shape), Xtr, Ytr_n)
+            if candidate < best - 1e-10:
+                opened = int(((flat[pick] != 0) & (before == 0)).sum())
+                closed = int(((flat[pick] == 0) & (before != 0)).sum())
+                accepted = {"round": round_index, "mse": round(candidate, 8), "opened": opened,
+                            "closed": closed, "flipped": int(per_round - opened - closed)}
+                best = candidate
+                best_state = (flat[: a.size].reshape(a.shape), flat[a.size:].reshape(b.shape))
+                break
+        entry = accepted or {"round": round_index, "mse": round(best, 8), "accepted": False}
+        trace.append(entry)
+        emit(entry)
+
+    held = mse(best_state[0], best_state[1], Xte, Yte_n)
+    baseline_held = mse(S0, S1, Xte, Yte_n)
+    variance = float(np.mean((Yte_n - Yte_n.mean()) ** 2)) or 1e-12
+    np.savez_compressed(os.path.join(program_dir(name), "state.npz"),
+                        S0=best_state[0], S1=best_state[1], H=HID, OUT=OUT)
+    meta = {
+        "name": name, "kind": "tesla-compiled-program",
+        "program": spec.get("name") or name, "expr": spec.get("expr"),
+        "mse": round(best, 8), "holdout_mse": round(held, 8),
+        "holdout_baseline_mse": round(baseline_held, 8),
+        "fidelity": round(max(0.0, 1 - held / variance), 4),
+        "baseline_fidelity": round(max(0.0, 1 - baseline_held / variance), 4),
+        "readout": {"mean": Y_mean, "std": Y_std, "scale": L_std, "offset": L_mean},
+        "examples": train_count, "holdout": holdout, "rounds": args.rounds,
+        "trace": trace, "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+    with open(os.path.join(program_dir(name), "meta.json"), "w", encoding="utf-8") as handle:
+        json.dump(meta, handle, ensure_ascii=False, indent=2)
+    emit({"ok": True, "event": "compiled", "name": name, "mse": round(best, 8),
+          "holdout_mse": round(held, 8), "fidelity": meta["fidelity"]})
+
 def main():
     parser = argparse.ArgumentParser(description="特斯拉阀 · 复刻")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -359,6 +469,17 @@ def main():
     p.add_argument("--candidates", type=int, default=6)
     p.add_argument("--seed", type=int, default=0)
     p.set_defaults(func=cmd_program)
+
+    p = sub.add_parser("compile")
+    p.add_argument("--spec", required=True, help="程序描述 JSON：{name, expr, output_dim}")
+    p.add_argument("--name", default=None)
+    p.add_argument("--samples", type=int, default=48)
+    p.add_argument("--holdout", type=int, default=24)
+    p.add_argument("--rounds", type=int, default=10)
+    p.add_argument("--candidates", type=int, default=6)
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--source", default=None)
+    p.set_defaults(func=cmd_compile)
 
     p = sub.add_parser("use")
     p.add_argument("--skill", required=True)

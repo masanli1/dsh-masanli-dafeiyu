@@ -1,7 +1,7 @@
 // 特斯拉阀 · 复刻：把 tesla_valve_v2 的阀阵/水塔网络接进来，
 // 并加一层「复刻」——朝想要的结果逐轮试阀（哪些边该开、该关），存成学会的功能。
 import { spawn } from 'node:child_process'
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -58,14 +58,19 @@ export function registerTeslaTool(ctx, { logger = console } = {}) {
     parameters: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['simulate', 'replicate', 'use', 'skills', 'program-record', 'program-fit', 'program-run', 'programs'] },
+        action: { type: 'string', enum: ['simulate', 'replicate', 'use', 'skills', 'program-record', 'program-fit', 'program-run', 'program-compile', 'programs'] },
         sample: { type: 'integer', description: 'MNIST 测试样本序号（0–9999）' },
         target: { type: 'integer', description: 'replicate 时的目标数字 0–9' },
         name: { type: 'string', description: 'replicate 时给这项功能起的名' },
         rounds: { type: 'integer', description: 'replicate 轮数，默认 12' },
         skill: { type: 'string', description: 'use 时用哪项功能（skills 里列出的名字）' },
         samples: { type: 'array', items: { type: 'integer' }, description: 'program-record 时要记录的样本序号' },
-        source: { type: 'string', description: '录制/拟合的起点：baseline、技能名或程序名' },
+        source: { type: 'string', description: '录制/拟合的起点：baseline、random、zero、技能名或程序名' },
+        spec: {
+          type: 'object',
+          description: 'program-compile 的程序描述：{name, expr, output_dim}，expr 里可用 x(批量 784 维)、x0(单条)、n',
+          additionalProperties: true,
+        },
       },
       required: ['action'],
       additionalProperties: false,
@@ -142,6 +147,27 @@ export function registerTeslaTool(ctx, { logger = console } = {}) {
             + (result.mse_vs_recorded === null || result.mse_vs_recorded === undefined
               ? '该样本未记录过，输出为新计算。'
               : `与记录输出的 MSE = ${result.mse_vs_recorded}。`),
+        }
+      }
+      if (args.action === 'program-compile') {
+        const name = String(args.name ?? (args.spec && args.spec.name) ?? 'program').trim()
+        if (!args.spec || !args.spec.expr) throw new Error('program-compile 需要 spec.expr（程序表达式）')
+        const specPath = join(homedir(), '.cache', `dfy-tesla-${Date.now()}.json`)
+        try { mkdirSync(dirname(specPath), { recursive: true }) } catch {}
+        writeFileSync(specPath, JSON.stringify({ name, ...args.spec }, null, 2))
+        const lines = await runCli(python, ['compile', '--spec', specPath, '--name', name,
+          '--samples', String(args.samples ?? 32), '--rounds', String(args.rounds ?? 10),
+          ...(args.source ? ['--source', String(args.source)] : [])], { timeoutMs: 1800000 })
+        const done = lines.find((line) => line.event === 'compiled') ?? {}
+        const trace = lines.filter((line) => line.event !== 'compiled')
+        const opened = trace.reduce((sum, entry) => sum + (entry.opened ?? 0), 0)
+        const closed = trace.reduce((sum, entry) => sum + (entry.closed ?? 0), 0)
+        return {
+          ok: true,
+          ...done,
+          trace,
+          summary: `程序「${name}」编译完成：累计试开 ${opened} 条边、试关 ${closed} 条边；`
+            + `训练 MSE ${done.mse}，留出集 MSE ${done.holdout_mse}（保真度 ${done.fidelity}）。`,
         }
       }
       if (args.action === 'skills') {
