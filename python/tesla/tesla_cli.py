@@ -114,6 +114,27 @@ def score_batch(L, y, target):
     return margin, acc
 
 
+
+
+# ---------------------------------------------------------------- 灵敏度挑边
+# 随机挑边在 5 万条边上信号太弱；这里用 impact.measure 统计的累计流量，
+# 按"这条边实际过了多少水"加权挑边——水走得多的边，改它才真的改变结果。
+
+def guided_weights(S0, S1, X, batch=8):
+    import impact
+    stats = impact.measure(X[:batch], S0, S1)
+    w_in = np.asarray(stats["flow_in"]) + 0.5 * np.asarray(stats["flow_in2"])
+    w_out = np.asarray(stats["flow_out"]) + 0.5 * np.asarray(stats["flow_out2"])
+    w = np.concatenate([w_in.ravel(), w_out.ravel()]).astype(np.float64)
+    w = np.maximum(w, 1e-9)
+    return w / w.sum()
+
+
+def pick_edges(rng, weights, count, size):
+    if weights is None or weights.size != size:
+        return rng.choice(size, count, replace=False)
+    return rng.choice(size, count, replace=False, p=weights)
+
 def cmd_replicate(args):
     X, y = load_data()
     rng = np.random.default_rng(args.seed)
@@ -137,14 +158,17 @@ def cmd_replicate(args):
     trace = []
     n_edges = int(S0.size + S1.size)
     per_round = max(8, n_edges // 500)
+    weights = guided_weights(S0, S1, Xb) if args.guided else None
     started = time.time()
     for round_index in range(1, args.rounds + 1):
+        if args.guided and round_index % 4 == 0:
+            weights = guided_weights(best[0], best[1], Xb)
         improved = False
         for _ in range(args.candidates):
             a, b = best[0].copy(), best[1].copy()
             n0 = a.size
             flat = np.concatenate([a.ravel(), b.ravel()])
-            pick = rng.choice(flat.size, per_round, replace=False)
+            pick = pick_edges(rng, weights, per_round, flat.size)
             flat[pick] = rng.choice(STATES, per_round)
             a2, b2 = flat[:n0].reshape(a.shape), flat[n0:].reshape(b.shape)
             score, acc = evaluate(a2, b2)
@@ -293,12 +317,13 @@ def cmd_program(args):
         flat0 = np.concatenate([S0.ravel(), S1.ravel()])
         n_edges = flat0.size
         per_round = max(16, n_edges // 400)
+        weights = guided_weights(S0, S1, X)
         for round_index in range(1, args.rounds + 1):
             accepted = None
             for _ in range(args.candidates):
                 a, b = best_state[0].copy(), best_state[1].copy()
                 flat = np.concatenate([a.ravel(), b.ravel()])
-                pick = rng.choice(flat.size, per_round, replace=False)
+                pick = pick_edges(rng, weights, per_round, flat.size)
                 before = flat[pick].copy()
                 flat[pick] = rng.choice(STATES, per_round)
                 candidate = mse(flat[:a.size].reshape(a.shape), flat[a.size:].reshape(b.shape))
@@ -415,13 +440,16 @@ def cmd_compile(args):
     emit({"event": "start", "mse": round(best, 8), "examples": train_count})
     flat0 = np.concatenate([S0.ravel(), S1.ravel()])
     per_round = max(16, flat0.size // 400)
+    weights = guided_weights(S0, S1, Xtr) if args.guided else None
     trace = []
     for round_index in range(1, args.rounds + 1):
+        if args.guided and round_index % 4 == 0:
+            weights = guided_weights(best_state[0], best_state[1], Xtr)
         accepted = None
         for _ in range(args.candidates):
             a, b = best_state[0].copy(), best_state[1].copy()
             flat = np.concatenate([a.ravel(), b.ravel()])
-            pick = rng.choice(flat.size, per_round, replace=False)
+            pick = pick_edges(rng, weights, per_round, flat.size)
             before = flat[pick].copy()
             flat[pick] = rng.choice(STATES, per_round)
             candidate = mse(flat[: a.size].reshape(a.shape), flat[a.size:].reshape(b.shape), Xtr, Ytr_n)
@@ -476,6 +504,7 @@ def main():
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--source", default=None, help="起始阀态：baseline / random / zero / 技能名")
     p.add_argument("--hidden", type=int, default=None, help="隐藏塔数量（默认 64）")
+    p.add_argument("--no-guided", dest="guided", action="store_false", help="关闭按流量加权挑边")
     p.add_argument("--out", type=int, default=None, help="出口塔数量（默认 24）")
     p.add_argument("--out-dir", dest="out_dir_arg", default=None)
     p.set_defaults(func=cmd_replicate)
@@ -503,6 +532,7 @@ def main():
     p.add_argument("--source", default=None)
     p.add_argument("--hidden", type=int, default=None)
     p.add_argument("--out", type=int, default=None)
+    p.add_argument("--no-guided", dest="guided", action="store_false")
     p.set_defaults(func=cmd_compile)
 
     p = sub.add_parser("use")
