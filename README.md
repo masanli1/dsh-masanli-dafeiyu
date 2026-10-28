@@ -511,3 +511,15 @@ tesla action=replicate target=5 name=big5 hidden=256 out=48 rounds=5
 - v1 用**实测包络**做整形，音色已经是真的（可播放）；
 - 阀态拟合 MSE 约 1.5，还没好到能"用阀态自己算出包络"，所以阀态目前只是记录；
 - 下一步：把拟合做稳，让出口塔水位直接驱动合成，再接到大肥鱼的语音上。
+
+## 大肥鱼用自己的音色说话（chat.29）
+
+学来的音色可以直接接进她的语音链路：
+
+1. `tesla action=voice-learn wav=/path/clip.wav name=lecture` 学音色；
+2. 设置 → 大肥鱼 → **自定义音色** 填 `lecture`（留空 = 原声）；
+3. 她再说任何话，链路变成 `say → 24 段包络整形 → afplay`；
+4. 整形失败（缺 ffmpeg/python）自动回退原声，不会没声音。
+
+已内置学会的音色：`tingting`（TTS 女声）、`lecture`（课程录音）。
+设置里的「自定义音色」提示会列出当前已学会的音色名。

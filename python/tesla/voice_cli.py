@@ -174,6 +174,18 @@ def cmd_speak(args):
     emit({"ok": True, "event": "spoken", "voice": args.voice, "text": args.text, "out": args.out or ""})
 
 
+def cmd_apply(args):
+    meta = load_voice(args.voice)
+    bands = np.asarray(meta["bands"], dtype=np.float64)
+    x = decode(args.inp)
+    y = apply_voice(x, bands)
+    y = np.clip(y / (np.abs(y).max() + 1e-9) * 0.9, -1, 1)
+    pcm = (y * 32767).astype("<i2")
+    subprocess.run([FFMPEG, "-hide_banner", "-loglevel", "error", "-y", "-f", "s16le",
+                    "-ar", str(SR), "-ac", "1", "-i", "-", args.out], input=pcm.tobytes(), check=True)
+    emit({"ok": True, "event": "applied", "voice": args.voice, "out": args.out})
+
+
 def cmd_list(args):
     if not os.path.isdir(VOICES):
         emit({"ok": True, "voices": []})
@@ -204,6 +216,12 @@ def main():
     p.add_argument("--say-voice", default="Tingting")
     p.add_argument("--no-play", action="store_true")
     p.set_defaults(func=cmd_speak)
+
+    p = sub.add_parser("apply")
+    p.add_argument("--voice", required=True)
+    p.add_argument("--in", dest="inp", required=True)
+    p.add_argument("--out", required=True)
+    p.set_defaults(func=cmd_apply)
 
     p = sub.add_parser("list")
     p.set_defaults(func=cmd_list)

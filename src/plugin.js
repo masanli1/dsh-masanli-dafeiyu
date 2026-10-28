@@ -13,7 +13,10 @@ import { apply as registerDenoiseTool, createDenoiseTool } from './denoise.js'
 import { createDenoiseJobs } from './denoise-jobs.js'
 import { createPowerKeeper } from './power.js'
 import { createMemoryStore, registerMemoryTool } from './memory.js'
-import { registerTeslaTool, listSkills, TESLA_CLI } from './tesla.js'
+import { registerTeslaTool, listSkills, TESLA_CLI, VOICE_CLI, VOICES_DIR } from './tesla.js'
+import { spawn } from 'node:child_process'
+import { existsSync as fileExists, readFileSync as readFileSyncImpl, readdirSync as readdirSyncImpl } from 'node:fs'
+import { join as joinPath } from 'node:path'
 import { DEFAULT_NOVEL_ROOT, createNovelService, registerNovelTool } from './novel.js'
 import { resolveClientTarget } from './client-target.js'
 import { isLocalRequest, jsonResponse } from './local-http.js'
@@ -77,6 +80,7 @@ export const Config = Schema.object({
   voiceEnabled: Schema.boolean().default(true).description('任务播报和打招呼时用系统语音说话（本机 TTS，不走网络）'),
   voiceAnnouncements: Schema.boolean().default(true).description('任务完成或出错时用语音播报一句'),
   voiceName: Schema.string().default('Tingting').description('语音音色（macOS 系统语音名，如 Tingting、Eddy、Flo）'),
+  voicePreset: Schema.string().default('').description('学来的自定义音色（留空 = 原声）。在「声音复刻」里学会后填音色名'),
   voiceRate: Schema.number().min(100).max(320).step(10).default(180).description('语速（每分钟词数）'),
   voiceVolume: Schema.number().min(0.05).max(1).step(0.05).default(0.9).description('语音音量'),
   greetingEnabled: Schema.boolean().default(true).description('长时间没人理时主动打招呼'),
@@ -114,6 +118,7 @@ const defaults = Object.freeze({
   voiceEnabled: true,
   voiceAnnouncements: true,
   voiceName: 'Tingting',
+  voicePreset: '',
   voiceRate: 180,
   voiceVolume: 0.9,
   greetingEnabled: true,
@@ -145,6 +150,7 @@ function publicConfig(config = {}) {
     voiceEnabled: config.voiceEnabled !== false,
     voiceAnnouncements: config.voiceAnnouncements !== false,
     voiceName: config.voiceName ?? defaults.voiceName,
+    voicePreset: asString(config.voicePreset, ''),
     voiceRate: Number.isFinite(config.voiceRate) ? config.voiceRate : defaults.voiceRate,
     voiceVolume: Number.isFinite(config.voiceVolume) ? config.voiceVolume : defaults.voiceVolume,
     greetingEnabled: config.greetingEnabled !== false,
@@ -323,7 +329,22 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   const settings = createSettingsScope(ctx, Config, config, publicConfig)
   const chat = createChatService({ ctx, logger, config: () => settings.get(), memory: config.memoryStore })
   const chatHandlers = createChatHandlers(chat, logger)
-  const speaker = createSpeaker({ logger })
+  const applyEnvelope = async (preset, input, output) => {
+    const python = (await findPython({ logger })).bin
+    const ffmpeg = await findFfmpeg(python, {})
+    await new Promise((resolve, reject) => {
+      const child = spawn(python, [VOICE_CLI, 'apply', '--voice', preset, '--in', input, '--out', output], {
+        stdio: ['ignore', 'ignore', 'pipe'],
+        env: { ...process.env, DF_FACTORY_FFMPEG: ffmpeg },
+      })
+      let stderr = ''
+      child.stderr?.on('data', (chunk) => { stderr = (stderr + chunk).slice(-600) })
+      child.once('error', reject)
+      child.once('exit', (code) => (code === 0 ? resolve() : reject(new Error(stderr || `退出码 ${code}`))))
+    })
+  }
+
+  const speaker = createSpeaker({ logger, applyEnvelope })
   let powerHeld = false
   const power = createPowerKeeper({
     logger,
@@ -355,7 +376,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   let activeTurns = 0
   const greeter = createGreeter({
     config: () => settings.get(),
-    speak: (text, options) => speaker.speak(text, options),
+    speak: (text, options) => speaker.speak(text, { ...options, preset: asString(settings.get()?.voicePreset, '') }),
     send: (message) => bridge?.send(message),
     isBusy: () => activeTurns > 0,
     logger,
@@ -572,6 +593,28 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({ kind: 'exact', path: CHAT_TARGET_ENDPOINT, handler: chatHandlers.target }),
         'dsh-dafeiyu: local chat target endpoint',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/voices',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            try {
+              const voices = fileExists(VOICES_DIR)
+                ? readdirSyncImpl(VOICES_DIR, { withFileTypes: true })
+                    .filter((entry) => entry.isDirectory())
+                    .map((entry) => {
+                      try { return JSON.parse(readFileSyncImpl(joinPath(VOICES_DIR, entry.name, 'meta.json'), 'utf8')) } catch { return { name: entry.name } }
+                    })
+                : []
+              jsonResponse(res, 200, { voices })
+            } catch (error) {
+              jsonResponse(res, 500, { error: String(error?.message ?? error) })
+            }
+          },
+        }),
+        'dsh-dafeiyu: voices',
       )
       httpCtx.effect(
         () => httpCtx.webServer.register({
