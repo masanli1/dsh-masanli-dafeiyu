@@ -83,6 +83,10 @@ export const Config = Schema.object({
   preventSleep: Schema.boolean().default(true).description('DSH 有任务在跑时阻止电脑空闲休眠（macOS caffeinate）'),
   preventSleepDisplay: Schema.boolean().default(false).description('连屏幕也保持常亮（默认只防系统休眠）'),
   novelRoot: Schema.string().default('').description('小说项目根目录（留空 = ~/Documents/大肥鱼小说）'),
+  chatMode: Schema.union([
+    Schema.const('dedicated').description('宠物专属会话（累积上下文）'),
+    Schema.const('current').description('跟随当前会话'),
+  ]).default('dedicated').description('页内聊天发到哪里：专属会话会一直记住之前的对话'),
 }).description('由 DeepSeek Harness 状态驱动的桌面大肥鱼伴侣')
 
 // Mark fields, rather than the root object: current DSH passes each volatile
@@ -114,6 +118,7 @@ const defaults = Object.freeze({
   preventSleep: true,
   preventSleepDisplay: false,
   novelRoot: '',
+  chatMode: 'dedicated',
 })
 
 function publicConfig(config = {}) {
@@ -142,6 +147,7 @@ function publicConfig(config = {}) {
     preventSleep: config.preventSleep !== false,
     preventSleepDisplay: config.preventSleepDisplay === true,
     novelRoot: asString(config.novelRoot, ''),
+    chatMode: config.chatMode === 'current' ? 'current' : 'dedicated',
   }
 }
 
@@ -307,7 +313,7 @@ function mount(ctx, config = {}, eventCtx = ctx) {
 function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   const eventStream = createEventStream()
   const settings = createSettingsScope(ctx, Config, config, publicConfig)
-  const chat = createChatService({ ctx, logger })
+  const chat = createChatService({ ctx, logger, config: () => settings.get() })
   const chatHandlers = createChatHandlers(chat, logger)
   const speaker = createSpeaker({ logger })
   let powerHeld = false

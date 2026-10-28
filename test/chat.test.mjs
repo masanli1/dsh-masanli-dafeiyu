@@ -76,6 +76,9 @@ console.log('ok   target 选择校验')
 
 // ---------------------------------------------------------------- HTTP layer
 import { createServer } from 'node:http'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createChatHandlers } from '../src/chat.js'
 
 const handlers = createChatHandlers(chat, silent)
@@ -118,3 +121,45 @@ assert.equal(emptyBody.status, 400)
 
 server.close()
 console.log('ok   HTTP 端点：状态 / 发送 / 方法校验')
+
+// ---------------------------------------------------------------- 宠物专属会话
+{
+  let created = 0
+  const sentTo = []
+  const fakeStorePath = join(mkdtempSync(join(tmpdir(), 'dfy-chat-store-')), 'chat.json')
+  const chatCtx = {
+    get(service) {
+      if (service === 'sessionQuery') {
+        return {
+          observeSession: async (id) => ({ header: { id, title: '宠物会话', origin: 'user' }, events: [], [Symbol.dispose]() {} }),
+        }
+      }
+      if (service === 'sessionController') {
+        return {
+          create: async () => { created += 1; return { sessionId: 'session-pet' } },
+          prompt: async (request) => { sentTo.push(request.sessionId); return { accepted: true } },
+        }
+      }
+      return undefined
+    },
+  }
+  const { createChatService: make } = await import('../src/chat.js')
+  const petChat = make({ ctx: chatCtx, logger: silent, config: () => ({ chatMode: 'dedicated' }), storePath: fakeStorePath })
+
+  const first = await petChat.state()
+  assert.equal(first.sessionId, 'session-pet')
+  assert.equal(created, 1, '第一次自动建会话')
+
+  const again = await petChat.state()
+  assert.equal(again.sessionId, 'session-pet')
+  assert.equal(created, 1, '之后复用同一个会话')
+
+  await petChat.send('还记得刚才说了什么吗')
+  assert.equal(sentTo.at(-1), 'session-pet', '消息发到专属会话，上下文连续')
+
+  // 手动切到别的会话后优先用手动选择
+  await petChat.select('session-other')
+  await petChat.send('换个会话')
+  assert.equal(sentTo.at(-1), 'session-other')
+  console.log('ok   宠物专属会话：自动创建 / 复用 / 连续上下文 / 手动切换')
+}

@@ -3,6 +3,9 @@
 // the Host's loopback web server, and the Host forwards the message to the
 // session controller (the same service the WebUI itself uses).
 import { randomUUID } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { isLocalRequest, jsonResponse } from './local-http.js'
 
 const MAX_MESSAGES = 60
@@ -60,9 +63,62 @@ export function messagesFromEvents(events) {
   return messages.slice(-MAX_MESSAGES)
 }
 
-export function createChatService({ ctx, logger = console }) {
+const CHAT_STORE = join(homedir(), '.dsh', 'dsh-dafeiyu-chat.json')
+
+export function createChatService({ ctx, logger = console, config = () => ({}), storePath = CHAT_STORE }) {
   const sessions = new Map()
   let targetId
+  let manualTarget = ''
+  let dedicatedId = ''
+
+  const readStore = () => {
+    try { return JSON.parse(readFileSync(storePath, 'utf8')) } catch { return {} }
+  }
+  const writeStore = (patch) => {
+    try {
+      mkdirSync(dirname(storePath), { recursive: true })
+      writeFileSync(storePath, `${JSON.stringify({ ...readStore(), ...patch }, null, 2)}\n`)
+    } catch {
+      // 持久化失败不影响使用
+    }
+  }
+
+  // 宠物专属会话：第一次聊天时新建，之后一直复用，上下文自然累积。
+  const resolveDedicated = async () => {
+    if (dedicatedId) return dedicatedId
+    const query = ctx.get?.('sessionQuery')
+    const controller = ctx.get?.('sessionController')
+    const stored = String(readStore().dedicatedSessionId ?? '')
+    if (stored && query?.observeSession) {
+      try {
+        const observation = await query.observeSession(stored)
+        try { observation?.[Symbol.dispose]?.() } catch {}
+        dedicatedId = stored
+        try { await ctx.get?.('sessionController')?.rename?.({ sessionId: stored, title: '和大肥鱼聊天' }) } catch {}
+        return dedicatedId
+      } catch {
+        // 旧会话被删了就重建
+      }
+    }
+    if (!controller?.create) return ''
+    const created = await controller.create({ cwd: homedir() })
+    dedicatedId = String(created?.sessionId ?? '')
+    if (dedicatedId) {
+      try { await controller.rename?.({ sessionId: dedicatedId, title: '和大肥鱼聊天' }) } catch {}
+      writeStore({ dedicatedSessionId: dedicatedId })
+    }
+    return dedicatedId
+  }
+
+  const mode = () => {
+    try { return String(config()?.chatMode ?? 'current') } catch { return 'current' }
+  }
+
+  const targetForUse = async () => {
+    if (manualTarget) return manualTarget
+    if (mode() === 'dedicated') return resolveDedicated()
+    return targetId
+  }
 
   const titleOf = (session) => {
     const header = session?.header ?? {}
@@ -148,8 +204,7 @@ export function createChatService({ ctx, logger = console }) {
   }
 
   const state = async () => {
-    if (!targetId) targetId = await soleLiveSession()
-    const id = targetId
+    const id = await targetForUse()
     const list = await recentSessions()
     if (!id) {
       return { sessionId: null, title: '', busy: false, sessions: list, messages: [] }
@@ -185,9 +240,8 @@ export function createChatService({ ctx, logger = console }) {
   const send = async (text) => {
     const value = typeof text === 'string' ? text.trim() : ''
     if (!value) throw new Error('消息不能为空')
-    const id = targetId ?? await soleLiveSession()
+    const id = await targetForUse()
     if (!id) throw new Error('先在面板顶部选一个会话，再发送')
-    targetId = id
     const controller = ctx.get?.('sessionController')
     if (!controller?.prompt) throw new Error('当前 Host 没有提供会话写入服务')
     // The controller starts with `signal.throwIfAborted()`, so the cancellation
@@ -223,6 +277,7 @@ export function createChatService({ ctx, logger = console }) {
     }
     const previous = sessions.get(id) ?? { id, title: '', at: 0, busy: false }
     sessions.set(id, { ...previous, at: Date.now() })
+    manualTarget = id
     targetId = id
     return { sessionId: id }
   }

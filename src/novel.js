@@ -86,12 +86,13 @@ export function createNovelTool({ root = DEFAULT_NOVEL_ROOT, logger = console } 
     description: [
       '管理本地小说项目：创建书籍、写大纲/人物卡、按章写作或追加、统计字数、导出全书。',
       `文件保存在 ${root}，一章一个 Markdown 文件，便于版本管理与二次编辑。`,
-      'action 取值：create / write / append / read / outline / characters / status / list / export。',
+      '写新章节前先调用 action=context 取回大纲、人物卡和最近两章，保证续写不跑偏。',
+      'action 取值：create / write / append / read / outline / characters / context / status / list / export。',
     ].join(' '),
     parameters: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['create', 'write', 'append', 'read', 'outline', 'characters', 'status', 'list', 'export'] },
+        action: { type: 'string', enum: ['create', 'write', 'append', 'read', 'outline', 'characters', 'context', 'status', 'list', 'export'] },
         book: { type: 'string', description: '书名（目录名）' },
         chapter: { type: 'integer', description: '章节号，从 1 开始' },
         title: { type: 'string', description: '章节标题（可选）' },
@@ -160,6 +161,22 @@ export function createNovelTool({ root = DEFAULT_NOVEL_ROOT, logger = console } 
         }
         writeFileSync(target, String(args.content))
         return { ok: true, book: name, path: target, words: countWords(args.content).total }
+      }
+
+      if (action === 'context') {
+        const dir = requireBook(name)
+        const outline = readIfExists(join(dir, 'outline.md')) ?? '（还没有大纲）'
+        const characters = readIfExists(join(dir, 'characters.md')) ?? '（还没有人物卡）'
+        const files = chapterFiles(dir)
+        const upto = Number.isInteger(Number(args.chapter)) ? Number(args.chapter) - 1 : files.length
+        const previous = files.slice(Math.max(0, upto - 2), Math.max(0, upto))
+        const parts = [`# 续写上下文：《${name}》`, '', '## 大纲', '', outline, '', '## 人物设定', '', characters, '']
+        for (const file of previous) {
+          const text = readIfExists(file.path) ?? ''
+          parts.push(`## ${file.name.replace(/\.md$/, '')}`, '', text.slice(-4000), '')
+        }
+        const text = parts.join('\n')
+        return { ok: true, book: name, text, words: countWords(text).total }
       }
 
       if (action === 'export') {

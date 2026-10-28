@@ -321,3 +321,22 @@ Agent 侧还注册了 `novel` 工具（action：`create / write / append / read 
 > 统计一下这本书写了多少字
 
 接口：`/plugins/dsh-dafeiyu/novel/{books,book,create,export,open}`，仅本机回环可访问。
+
+## 聊天上下文 + 小说续写上下文（chat.17/18）
+
+### 宠物专属会话
+
+`chatMode` 默认 `dedicated`：第一次点开聊天面板时，Host 自动新建一个会话并改名为
+「和大肥鱼聊天」，之后一直复用同一个会话——**聊过的内容就是上下文**，重启 DSH 也不会丢
+（会话 id 存在 `~/.dsh/dsh-dafeiyu-chat.json`）。
+
+设置里可切回 `current`（跟随当前会话），或在面板顶部手动选一个会话（临时覆盖）。
+
+### 小说续写上下文
+
+`novel` 工具新增 `action=context`：返回**大纲 + 人物卡 + 最近两章**（各截断到 4000 字），
+工具描述里已提示模型“写新章节前先取上下文”。所以可以直接说：
+
+> 接着写《长夜灯火》第 2 章，1500 字
+
+它会先拉上下文再动笔，避免人物名、设定跑偏。
