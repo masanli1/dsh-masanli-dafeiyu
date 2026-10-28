@@ -400,6 +400,35 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
     logger,
   })
 
+  const pickOne = (list) => list[Math.floor(Math.random() * list.length)]
+  const MOOD_TEXT = {
+    praise: ['嘿嘿，被你夸到了', '谢谢～我尾巴都翘起来了', '真的吗？那我今天要多蹦两下'],
+    feed: ['谢谢，我吃饱了', '这个好吃，还有吗'],
+    play: ['好耶，再来一次！', '我喜欢跟你玩'],
+    missing: ['好久没见你了，我一直在等你', '你是不是把我忘了…'],
+    hungry: ['肚子在叫了…有吃的吗', '有点饿了'],
+    sleepy: ['夜深了，眼皮开始打架', '我有点困了…'],
+    happy: ['今天心情不错！', '今天感觉挺好的'],
+  }
+
+  // 说话 + 气泡：她要说的每一句都能在气泡里看到。
+  const pulse = (text, state = 'SUCCESS') => {
+    try {
+      bridge?.send(createMessage(CompanionMessageKind.PULSE, {
+        state, message: text, detail: '大肥鱼', ttlMs: 6000, resumeState: 'IDLE',
+      }))
+    } catch {}
+    try {
+      const live = settings.get()
+      speaker.speak(text, {
+        voice: asString(live?.voiceName, 'Tingting'),
+        rate: Number(live?.voiceRate ?? 180),
+        volume: Number(live?.voiceVolume ?? 0.9),
+        preset: asString(live?.voicePreset, ''),
+      })
+    } catch {}
+  }
+
   // 主动行为：不再固定"一天三问"，而是按"多久没聊 + 当前状态"决定要不要冒泡。
   let lastProactive = 0
   const proactiveTimer = setInterval(() => {
@@ -409,10 +438,12 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       const current = settings.get()
       if (current.enabled === false || current.greetingEnabled === false) return
       if (Date.now() - lastProactive < 3 * 3600 * 1000) return
-      const due = (snap.daysSinceChat ?? 0) >= 2 || snap.hunger >= 0.8 || snap.sleepiness >= 0.85
-      if (!due) return
+      const key = (snap.daysSinceChat ?? 0) >= 2 ? 'missing'
+        : snap.hunger >= 0.8 ? 'hungry'
+          : snap.sleepiness >= 0.85 ? 'sleepy' : ''
+      if (!key) return
       lastProactive = Date.now()
-      greeter.greet()
+      pulse(pickOne(MOOD_TEXT[key]))
     } catch {}
   }, 10 * 60 * 1000)
   if (typeof proactiveTimer.unref === 'function') proactiveTimer.unref()
@@ -688,7 +719,13 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
               for await (const chunk of req) chunks.push(chunk)
               const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
               const action = String(body.action ?? '')
-              jsonResponse(res, 200, mood.poke(action === 'feed' ? 'feed' : action === 'play' ? 'play' : action === 'praise' ? 'praise' : 'seen'))
+              const kind = action === 'feed' ? 'feed' : action === 'play' ? 'play' : action === 'praise' ? 'praise' : 'seen'
+              const next = mood.poke(kind)
+              if (MOOD_TEXT[kind]) pulse(pickOne(MOOD_TEXT[kind]))
+              else if (action === 'tick' && MOOD_TEXT[next.mood === '想你' ? 'missing' : next.mood === '饿' ? 'hungry' : next.mood === '困' ? 'sleepy' : 'happy']) {
+                pulse(pickOne(MOOD_TEXT[next.mood === '想你' ? 'missing' : next.mood === '饿' ? 'hungry' : next.mood === '困' ? 'sleepy' : 'happy']))
+              }
+              jsonResponse(res, 200, next)
             } catch (error) {
               jsonResponse(res, 500, { error: String(error?.message ?? error) })
             }
