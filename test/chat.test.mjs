@@ -65,7 +65,9 @@ assert.equal(receipt.accepted, true)
 assert.equal(prompts.length, 1)
 assert.equal(prompts[0].sessionId, 's1')
 assert.equal(prompts[0].mode, 'queue')
-assert.deepEqual(prompts[0].content, [{ type: 'text', text: '你好呀' }])
+// send() 可能把 <dfy-context> 工作摘要/长期记忆前缀拼在正文前面
+assert.equal(prompts[0].content[0].type, 'text')
+assert.ok(prompts[0].content[0].text.includes('你好呀'))
 assert.match(prompts[0].requestId, /^[0-9a-f-]{36}$/)
 console.log('ok   state / send 走 sessionQuery + sessionController')
 
