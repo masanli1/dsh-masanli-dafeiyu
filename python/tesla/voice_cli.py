@@ -54,15 +54,27 @@ def band_edges(n=BANDS, lo=80.0, hi=7500.0):
     return np.geomspace(lo, hi, n + 1)
 
 
-def band_energies(x, n=BANDS):
-    spec = np.abs(np.fft.rfft(x * np.hanning(len(x)))) ** 2
-    freqs = np.fft.rfftfreq(len(x), 1 / SR)
+def band_energies(x, n=BANDS, chunk_seconds=1.0):
+    """按 1 秒切片算频段能量再取中位数，避免音乐/伴奏或单个爆音主导包络。"""
+    size = max(int(SR * chunk_seconds), 1024)
     edges = band_edges(n)
-    out = np.zeros(n, dtype=np.float64)
-    for index in range(n):
-        mask = (freqs >= edges[index]) & (freqs < edges[index + 1])
-        out[index] = spec[mask].sum()
-    return np.log10(out + 1e-12)
+    frames = []
+    for start in range(0, max(1, len(x) - size + 1), size):
+        piece = x[start:start + size]
+        if len(piece) < size // 2:
+            continue
+        spec = np.abs(np.fft.rfft(piece * np.hanning(len(piece)))) ** 2
+        freqs = np.fft.rfftfreq(len(piece), 1 / SR)
+        row = np.zeros(n, dtype=np.float64)
+        for index in range(n):
+            mask = (freqs >= edges[index]) & (freqs < edges[index + 1])
+            row[index] = spec[mask].sum()
+        frames.append(row)
+    if not frames:
+        frames = [np.ones(n)]
+    stacked = np.asarray(frames, dtype=np.float64)
+    pooled = np.median(stacked, axis=0)
+    return np.log10(pooled + 1e-12)
 
 
 def envelope_from_bands(bands_log, length, n=BANDS):
@@ -74,7 +86,10 @@ def envelope_from_bands(bands_log, length, n=BANDS):
 
 
 def apply_voice(x, bands_log):
-    curve = envelope_from_bands(bands_log, len(x))
+    """把信号整形成目标包络：增益 = 目标包络 − 信号自身包络（匹配滤波）。"""
+    source = band_energies(x)
+    correction = np.clip(np.asarray(bands_log) - source, -12.0, 12.0)
+    curve = envelope_from_bands(correction, len(x))
     return np.fft.irfft(np.fft.rfft(x) * curve, len(x))
 
 
