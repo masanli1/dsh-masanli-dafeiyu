@@ -44,6 +44,8 @@ final class PetView: NSView {
 }
 
 final class ChatWindow: NSPanel, NSTextFieldDelegate {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
     weak var app: AppDelegate?
     private let logView = NSTextView()
     private let input = NSTextField()
@@ -52,6 +54,10 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
     private let balanceLabel = NSTextField(labelWithString: "")
     private let taskLabel = NSTextField(labelWithString: "")
     private var timer: Timer?
+    private var expanded = false
+    private let expandedSize = NSSize(width: 360, height: 400)
+    private let collapsedSize = NSSize(width: 220, height: 46)
+    private var summaryLabel: NSTextField!
 
     init(app: AppDelegate) {
         self.app = app
@@ -138,8 +144,49 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
         effect.addSubview(stop)
         effect.addSubview(player)
 
+        summaryLabel = NSTextField(labelWithString: "待命")
+        summaryLabel.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        summaryLabel.textColor = NSColor(calibratedWhite: 0.2, alpha: 1)
+        summaryLabel.alignment = .center
+        summaryLabel.frame = NSRect(x: 10, y: 13, width: rect.width - 20, height: 20)
+        summaryLabel.isHidden = true
+        effect.addSubview(summaryLabel)
+
+        let click = NSClickGestureRecognizer(target: self, action: #selector(summaryClicked))
+        effect.addGestureRecognizer(click)
+
         self.contentView = effect
         self.setFrame(rect, display: true)
+    }
+
+    @objc private func summaryClicked() {
+        setExpanded(!expanded)
+    }
+
+    func setExpanded(_ value: Bool) {
+        expanded = value
+        let target = value ? expandedSize : collapsedSize
+        var frame = self.frame
+        frame.size = target
+        self.setFrame(frame, display: true)
+        for view in contentView?.subviews ?? [] {
+            if view === summaryLabel { view.isHidden = value }
+            else { view.isHidden = !value }
+        }
+        if value {
+            self.makeKeyAndOrderFront(nil)
+            input.becomeFirstResponder()
+            refresh()
+        }
+        updateSummary()
+    }
+
+    private func updateSummary() {
+        var parts: [String] = []
+        if !balanceLabel.stringValue.isEmpty { parts.append(balanceLabel.stringValue) }
+        if !taskLabel.stringValue.isEmpty { parts.append(taskLabel.stringValue) }
+        if parts.isEmpty { parts.append(stateLabel.stringValue.isEmpty ? "大肥鱼" : stateLabel.stringValue) }
+        summaryLabel.stringValue = parts.joined(separator: " · ")
     }
 
     private func makeButton(title: String, frame: NSRect, action: Selector) -> NSButton {
@@ -155,6 +202,15 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
         if let state = state { stateLabel.stringValue = state }
         if let balance = balance { balanceLabel.stringValue = balance }
         if let tasks = tasks { taskLabel.stringValue = tasks }
+        updateSummary()
+    }
+
+    func showCollapsed() {
+        setExpanded(false)
+    }
+
+    func showExpanded() {
+        setExpanded(true)
     }
 
     @objc private func sendTapped() {
@@ -189,7 +245,7 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 3
         paragraph.paragraphSpacing = 8
-        for message in messages.suffix(40) {
+        for message in messages.suffix(80) {
             var text = (message["text"] as? String) ?? ""
             if let range = text.range(of: "</dfy-context>") { text = String(text[range.upperBound...]) }
             text = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -468,8 +524,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             chat.orderOut(nil)
             chat.stopPolling()
         } else {
+            chat.showCollapsed()
             placeChat(chat)
             chat.orderFront(nil)
+            chat.makeKey()
             chat.startPolling()
         }
     }
