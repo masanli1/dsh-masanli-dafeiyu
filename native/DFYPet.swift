@@ -69,6 +69,7 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
         let rect = NSRect(x: 0, y: 0, width: 360, height: 400)
         super.init(contentRect: rect, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         self.isFloatingPanel = true
+        self.becomesKeyOnlyIfNeeded = false
         self.level = .floating
         self.isOpaque = false
         self.hasShadow = true
@@ -116,12 +117,15 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
         separator.boxType = .separator
         effect.addSubview(separator)
 
-        let scroll = NSScrollView(frame: NSRect(x: 12, y: 60, width: rect.width - 24, height: rect.height - 128))
+        let scroll = NSScrollView(frame: NSRect(x: 12, y: 84, width: rect.width - 24, height: rect.height - 152))
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
-        logView.frame = NSRect(x: 0, y: 0, width: rect.width - 24, height: rect.height - 128)
+        logView.frame = NSRect(x: 0, y: 0, width: rect.width - 24, height: rect.height - 152)
         logView.isEditable = false
+        logView.isSelectable = true
+        logView.isRichText = true
+        logView.allowsUndo = false
         logView.drawsBackground = false
         logView.textColor = NSColor(calibratedWhite: 0.12, alpha: 1)
         logView.font = NSFont.systemFont(ofSize: 13)
@@ -141,6 +145,18 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
         input.delegate = self
         effect.addSubview(input)
 
+        let chipY: CGFloat = 52
+        let chipWidth: CGFloat = 76
+        let chips = ["展开说说", "换个说法", "接着说"]
+        for (index, title) in chips.enumerated() {
+            let chip = NSButton(frame: NSRect(x: 12 + CGFloat(index) * (chipWidth + 6), y: chipY, width: chipWidth, height: 24))
+            chip.title = title
+            chip.bezelStyle = .inline
+            chip.font = NSFont.systemFont(ofSize: 11.5)
+            chip.target = self
+            chip.action = #selector(chipTapped(_:))
+            effect.addSubview(chip)
+        }
         let send = makeButton(title: "发送", frame: NSRect(x: rect.width - 144, y: 16, width: 44, height: 30), action: #selector(sendTapped))
         let stop = makeButton(title: "停止", frame: NSRect(x: rect.width - 96, y: 16, width: 44, height: 30), action: #selector(stopTapped))
         stop.contentTintColor = .systemRed
@@ -158,7 +174,7 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
         effect.addSubview(summaryLabel)
 
         let click = NSClickGestureRecognizer(target: self, action: #selector(summaryClicked))
-        effect.addGestureRecognizer(click)
+        summaryLabel.addGestureRecognizer(click)
 
         self.contentView = effect
         self.setFrame(rect, display: true)
@@ -222,6 +238,12 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
         let text = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.isEmpty { return }
         input.stringValue = ""
+        app?.post("/plugins/dsh-dafeiyu/chat/send", ["text": text])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { self.refresh() }
+    }
+
+    @objc private func chipTapped(_ sender: NSButton) {
+        let text = sender.title
         app?.post("/plugins/dsh-dafeiyu/chat/send", ["text": text])
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { self.refresh() }
     }
