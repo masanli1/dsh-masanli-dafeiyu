@@ -66,6 +66,10 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
     private let balanceLabel = NSTextField(labelWithString: "")
     private let taskLabel = NSTextField(labelWithString: "")
     private var timer: Timer?
+    private var idleTimer: Timer?
+    private var idleSeconds: TimeInterval {
+        Double(ProcessInfo.processInfo.environment["DSH_DAFEIYU_CHAT_IDLE_SEC"] ?? "") ?? 45
+    }
     private var expanded = false
     private let expandedSize = NSSize(width: 360, height: 400)
     private let collapsedSize = NSSize(width: 220, height: 46)
@@ -193,8 +197,19 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
         setExpanded(!expanded)
     }
 
+    // 一段时间没操作就自动收回成小条
+    func resetIdle() {
+        idleTimer?.invalidate()
+        guard expanded else { return }
+        idleTimer = Timer.scheduledTimer(withTimeInterval: idleSeconds, repeats: false) { _ in
+            guard self.expanded else { return }
+            self.setExpanded(false)
+        }
+    }
+
     func setExpanded(_ value: Bool) {
         expanded = value
+        if !value { idleTimer?.invalidate() }
         let target = value ? expandedSize : collapsedSize
         var frame = self.frame
         frame.size = target
@@ -207,6 +222,7 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
             self.makeKeyAndOrderFront(nil)
             input.becomeFirstResponder()
             refresh()
+            resetIdle()
         }
         updateSummary()
     }
@@ -243,7 +259,12 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
         setExpanded(true)
     }
 
+    func controlTextDidChange(_ obj: Notification) {
+        resetIdle()
+    }
+
     @objc private func sendTapped() {
+        resetIdle()
         let text = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.isEmpty { return }
         input.stringValue = ""
@@ -252,6 +273,7 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
     }
 
     @objc private func chipTapped(_ sender: NSButton) {
+        resetIdle()
         let text = sender.title
         app?.post("/plugins/dsh-dafeiyu/chat/send", ["text": text])
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { self.refresh() }
