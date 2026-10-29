@@ -47,59 +47,101 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
     weak var app: AppDelegate?
     private let logView = NSTextView()
     private let input = NSTextField()
+    private let titleLabel = NSTextField(labelWithString: "大肥鱼")
+    private let stateLabel = NSTextField(labelWithString: "待命")
+    private let balanceLabel = NSTextField(labelWithString: "")
+    private let taskLabel = NSTextField(labelWithString: "")
     private var timer: Timer?
 
     init(app: AppDelegate) {
         self.app = app
-        let rect = NSRect(x: 0, y: 0, width: 340, height: 320)
+        let rect = NSRect(x: 0, y: 0, width: 360, height: 400)
         super.init(contentRect: rect, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         self.isFloatingPanel = true
         self.level = .floating
-        self.backgroundColor = NSColor(calibratedWhite: 0.09, alpha: 0.96)
         self.isOpaque = false
         self.hasShadow = true
-        self.isMovableByWindowBackground = false
+        self.backgroundColor = .clear
+        self.appearance = NSAppearance(named: .darkAqua)
 
-        let container = NSView(frame: rect)
-        container.wantsLayer = true
-        container.layer?.cornerRadius = 16
-        container.layer?.borderWidth = 1
-        container.layer?.borderColor = NSColor(calibratedWhite: 1, alpha: 0.14).cgColor
-        container.layer?.backgroundColor = NSColor(calibratedWhite: 0.09, alpha: 0.96).cgColor
+        let effect = NSVisualEffectView(frame: rect)
+        effect.appearance = NSAppearance(named: .darkAqua)
+        effect.material = .hudWindow
+        effect.blendingMode = .behindWindow
+        effect.state = .active
+        effect.wantsLayer = true
+        effect.layer?.cornerRadius = 18
+        effect.layer?.masksToBounds = true
+        effect.layer?.borderWidth = 1
+        effect.layer?.borderColor = NSColor(calibratedWhite: 1, alpha: 0.18).cgColor
 
-        let scroll = NSScrollView(frame: NSRect(x: 10, y: 54, width: 320, height: 256))
+        func label(_ text: String, size: CGFloat, weight: NSFont.Weight, alpha: CGFloat) -> NSTextField {
+            let field = NSTextField(labelWithString: text)
+            field.font = NSFont.systemFont(ofSize: size, weight: weight)
+            field.textColor = NSColor(calibratedWhite: 0.96, alpha: alpha)
+            return field
+        }
+
+        titleLabel.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
+        titleLabel.textColor = NSColor(calibratedWhite: 0.98, alpha: 1)
+        titleLabel.frame = NSRect(x: 16, y: rect.height - 30, width: 120, height: 18)
+        effect.addSubview(titleLabel)
+
+        stateLabel.font = NSFont.systemFont(ofSize: 11.5)
+        stateLabel.textColor = NSColor(calibratedWhite: 0.9, alpha: 0.8)
+        stateLabel.frame = NSRect(x: 16, y: rect.height - 50, width: 200, height: 16)
+        effect.addSubview(stateLabel)
+
+        balanceLabel.font = NSFont.systemFont(ofSize: 11.5)
+        balanceLabel.textColor = NSColor(calibratedWhite: 0.9, alpha: 0.7)
+        balanceLabel.alignment = .right
+        balanceLabel.frame = NSRect(x: rect.width - 170, y: rect.height - 30, width: 154, height: 16)
+        effect.addSubview(balanceLabel)
+
+        taskLabel.font = NSFont.systemFont(ofSize: 11.5)
+        taskLabel.textColor = NSColor(calibratedWhite: 0.9, alpha: 0.7)
+        taskLabel.alignment = .right
+        taskLabel.frame = NSRect(x: rect.width - 170, y: rect.height - 50, width: 154, height: 16)
+        effect.addSubview(taskLabel)
+
+        let separator = NSBox(frame: NSRect(x: 12, y: rect.height - 62, width: rect.width - 24, height: 1))
+        separator.boxType = .separator
+        effect.addSubview(separator)
+
+        let scroll = NSScrollView(frame: NSRect(x: 12, y: 60, width: rect.width - 24, height: rect.height - 128))
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
-        logView.frame = NSRect(x: 0, y: 0, width: 320, height: 256)
+        logView.frame = NSRect(x: 0, y: 0, width: rect.width - 24, height: rect.height - 128)
         logView.isEditable = false
         logView.drawsBackground = false
-        logView.textColor = NSColor(calibratedWhite: 0.94, alpha: 1)
+        logView.textColor = NSColor(calibratedWhite: 0.95, alpha: 1)
         logView.font = NSFont.systemFont(ofSize: 13)
-        logView.textContainerInset = NSSize(width: 6, height: 6)
+        logView.textContainerInset = NSSize(width: 4, height: 8)
+        logView.isAutomaticQuoteSubstitutionEnabled = false
         scroll.documentView = logView
-        container.addSubview(scroll)
+        effect.addSubview(scroll)
 
-        input.frame = NSRect(x: 10, y: 14, width: 196, height: 30)
+        input.frame = NSRect(x: 12, y: 16, width: rect.width - 160, height: 30)
         input.placeholderString = "说点什么…"
         input.font = NSFont.systemFont(ofSize: 13)
-        input.textColor = NSColor(calibratedWhite: 0.95, alpha: 1)
-        input.backgroundColor = NSColor(calibratedWhite: 0.18, alpha: 1)
+        input.textColor = NSColor(calibratedWhite: 0.96, alpha: 1)
+        input.backgroundColor = NSColor(calibratedWhite: 1, alpha: 0.10)
         input.isBordered = false
         input.wantsLayer = true
-        input.layer?.cornerRadius = 8
+        input.layer?.cornerRadius = 9
         input.delegate = self
-        container.addSubview(input)
+        effect.addSubview(input)
 
-        let send = makeButton(title: "发送", frame: NSRect(x: 212, y: 14, width: 44, height: 30), action: #selector(sendTapped))
-        let stop = makeButton(title: "停止", frame: NSRect(x: 258, y: 14, width: 44, height: 30), action: #selector(stopTapped))
+        let send = makeButton(title: "发送", frame: NSRect(x: rect.width - 144, y: 16, width: 44, height: 30), action: #selector(sendTapped))
+        let stop = makeButton(title: "停止", frame: NSRect(x: rect.width - 96, y: 16, width: 44, height: 30), action: #selector(stopTapped))
         stop.contentTintColor = .systemRed
-        let player = makeButton(title: "▶", frame: NSRect(x: 304, y: 14, width: 32, height: 30), action: #selector(playerTapped))
-        container.addSubview(send)
-        container.addSubview(stop)
-        container.addSubview(player)
+        let player = makeButton(title: "▶", frame: NSRect(x: rect.width - 48, y: 16, width: 36, height: 30), action: #selector(playerTapped))
+        effect.addSubview(send)
+        effect.addSubview(stop)
+        effect.addSubview(player)
 
-        self.contentView = container
+        self.contentView = effect
         self.setFrame(rect, display: true)
     }
 
@@ -112,6 +154,12 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
         return button
     }
 
+    func updateStatus(state: String?, balance: String?, tasks: String?) {
+        if let state = state { stateLabel.stringValue = state }
+        if let balance = balance { balanceLabel.stringValue = balance }
+        if let tasks = tasks { taskLabel.stringValue = tasks }
+    }
+
     @objc private func sendTapped() {
         let text = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.isEmpty { return }
@@ -120,19 +168,11 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { self.refresh() }
     }
 
-    @objc private func stopTapped() {
-        app?.post("/plugins/dsh-dafeiyu/chat/stop", [:])
-    }
-
-    @objc private func playerTapped() {
-        app?.openPlayer()
-    }
+    @objc private func stopTapped() { app?.post("/plugins/dsh-dafeiyu/chat/stop", [:]) }
+    @objc private func playerTapped() { app?.openPlayer() }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
-        if selector == #selector(NSResponder.insertNewline(_:)) {
-            sendTapped()
-            return true
-        }
+        if selector == #selector(NSResponder.insertNewline(_:)) { sendTapped(); return true }
         return false
     }
 
@@ -142,29 +182,44 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
         refresh()
     }
 
-    func stopPolling() {
-        timer?.invalidate()
-        timer = nil
-    }
+    func stopPolling() { timer?.invalidate(); timer = nil }
 
     func refresh() {
         guard let data = app?.get("/plugins/dsh-dafeiyu/chat/state"),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
         let messages = (object["messages"] as? [[String: Any]]) ?? []
-        var lines: [String] = []
+        let attributed = NSMutableAttributedString()
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 3
+        paragraph.paragraphSpacing = 8
         for message in messages.suffix(40) {
             var text = (message["text"] as? String) ?? ""
             if let range = text.range(of: "</dfy-context>") { text = String(text[range.upperBound...]) }
             text = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if text.isEmpty { continue }
-            let who = (message["role"] as? String) == "user" ? "我" : "大肥鱼"
-            lines.append("\(who)：\(text)")
+            let isUser = (message["role"] as? String) == "user"
+            let who = isUser ? "我" : "大肥鱼"
+            let header = NSMutableAttributedString(string: who + "\n", attributes: [
+                .font: NSFont.systemFont(ofSize: 11.5, weight: .semibold),
+                .foregroundColor: isUser ? NSColor(calibratedRed: 0.62, green: 0.74, blue: 1, alpha: 1)
+                                        : NSColor(calibratedRed: 0.55, green: 0.92, blue: 0.75, alpha: 1),
+            ])
+            let body = NSAttributedString(string: text + "\n", attributes: [
+                .font: NSFont.systemFont(ofSize: 13),
+                .foregroundColor: NSColor(calibratedWhite: 0.95, alpha: 1),
+                .paragraphStyle: paragraph,
+            ])
+            attributed.append(header)
+            attributed.append(body)
         }
-        logView.string = lines.isEmpty ? "还没有消息" : lines.joined(separator: "\n\n")
-        if let end = logView.string.endIndex as String.Index? {
-            logView.scrollRangeToVisible(NSRange(location: logView.string.count, length: 0))
-            _ = end
+        if attributed.length == 0 {
+            attributed.append(NSAttributedString(string: "还没有消息，说点什么吧。", attributes: [
+                .font: NSFont.systemFont(ofSize: 13),
+                .foregroundColor: NSColor(calibratedWhite: 0.85, alpha: 0.6),
+            ]))
         }
+        logView.textStorage?.setAttributedString(attributed)
+        logView.scrollToEndOfDocument(nil)
     }
 }
 
@@ -224,6 +279,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { _ in self.tick(0.02) }
         startStdin()
         respond("ready")
+        if ProcessInfo.processInfo.environment["DSH_DAFEIYU_CHAT_OPEN"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { self.toggleChat() }
+        }
         FileHandle.standardError.write(Data("clips=\(clips.count) assets=\(bundleRoot.path) window=\(window.frame)\n".utf8))
     }
 
@@ -333,6 +391,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
                 components?.path = ""
                 if let base = components?.url { baseURL = base }
+            }
+        case "task":
+            var detail = (message["activity"] as? String) ?? (message["state"] as? String) ?? ""
+            if let text = message["detail"] as? String, !text.isEmpty { detail = text }
+            chatWindow?.updateStatus(state: detail.isEmpty ? nil : detail, balance: nil, tasks: nil)
+        case "tasks":
+            let items = (message["tasks"] as? [[String: Any]]) ?? []
+            let active = items.filter { (($0["state"] as? String) ?? "") != "IDLE" && (($0["state"] as? String) ?? "") != "DONE" }
+            let summary = active.isEmpty ? "空闲" : "任务 \((active.count))"
+            chatWindow?.updateStatus(state: nil, balance: nil, tasks: summary)
+        case "balance":
+            if let balances = message["balances"] as? [[String: Any]],
+               let cny = balances.first(where: { ($0["currency"] as? String) == "CNY" }),
+               let total = cny["total"] as? String {
+                chatWindow?.updateStatus(state: nil, balance: "余额 ¥" + total, tasks: nil)
             }
         case "ping":
             respond("pong")

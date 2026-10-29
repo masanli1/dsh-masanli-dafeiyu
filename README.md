@@ -730,3 +730,13 @@ mood 已经能驱动它的状态气泡。
 
 回滚：原版二进制备份在 `/tmp/original-helper.bin`，复制回
 `runtime/bin/darwin/dsh-dafeiyu-helper.app/Contents/MacOS/dsh-dafeiyu-helper` 即可。
+
+## 原生面板：状态 / 余额 / 任务（chat.54）
+
+对话面板重做：
+
+- 深色半透明卡片（`NSVisualEffectView` + `darkAqua`），圆角 18、细边框；
+- 顶部一行标题 + **状态**（干活中/思考中…）；
+- 右上两行：**余额 ¥xx** 与 **任务 n**（来自 host 的 `balance` / `tasks` 消息）；
+- 消息按角色着色（我=蓝、大肥鱼=绿），带段间距，自动滚到底；
+- 底部：输入框 + 发送 / 停止 / ▶ 播放器。
