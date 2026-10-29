@@ -710,6 +710,88 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({
           kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/chat/stream',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) { jsonResponse(res, 403, { error: 'local access only' }); return }
+            res.writeHead(200, {
+              'content-type': 'text/event-stream; charset=utf-8',
+              'cache-control': 'no-store',
+              connection: 'keep-alive',
+            })
+            let last = ''
+            let closed = false
+            const push = async () => {
+              if (closed) return
+              try {
+                const snapshot = await chat.state()
+                const payload = JSON.stringify({
+                  sessionId: snapshot.sessionId, title: snapshot.title, busy: snapshot.busy,
+                  messages: snapshot.messages, sessions: snapshot.sessions, error: snapshot.error ?? '',
+                })
+                if (payload !== last) { last = payload; res.write(`data: ${payload}\n\n`) }
+              } catch {}
+            }
+            push()
+            const timer = setInterval(push, 700)
+            req.on('close', () => { closed = true; clearInterval(timer); try { res.end() } catch {} })
+            req.on('error', () => { closed = true; clearInterval(timer) })
+          },
+        }),
+        'dsh-dafeiyu: chat stream',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/chat/stop',
+          handler: async (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            if (req.method !== 'POST') return jsonResponse(res, 405, { error: 'method not allowed' })
+            try { jsonResponse(res, 200, await chat.stop()) } catch (error) { jsonResponse(res, 500, { error: String(error?.message ?? error) }) }
+          },
+        }),
+        'dsh-dafeiyu: chat stop',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/chat/speak',
+          handler: async (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            if (req.method !== 'POST') return jsonResponse(res, 405, { error: 'method not allowed' })
+            try {
+              const chunks = []
+              for await (const chunk of req) chunks.push(chunk)
+              const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+              const text = String(body.text ?? '').slice(0, 500)
+              const live = settings.get()
+              const started = speaker.speak(text, {
+                voice: asString(live?.voiceName, 'Tingting'),
+                rate: Number(live?.voiceRate ?? 180),
+                volume: Number(live?.voiceVolume ?? 0.9),
+                preset: asString(live?.voicePreset, ''),
+              })
+              jsonResponse(res, 200, { started })
+            } catch (error) {
+              jsonResponse(res, 500, { error: String(error?.message ?? error) })
+            }
+          },
+        }),
+        'dsh-dafeiyu: chat speak',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/chat/welcome',
+          handler: async (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            try { jsonResponse(res, 200, await chat.welcome()) } catch (error) { jsonResponse(res, 500, { error: String(error?.message ?? error) }) }
+          },
+        }),
+        'dsh-dafeiyu: chat welcome',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
           path: '/plugins/dsh-dafeiyu/mood',
           handler: async (req, res) => {
             if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })

@@ -384,12 +384,47 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
     return { sessionId: id }
   }
 
+  const stop = async () => {
+    const id = await targetForUse()
+    const controller = ctx.get?.('sessionController')
+    if (!id || !controller?.cancel) return { stopped: false }
+    try {
+      await controller.cancel({ sessionId: id })
+      return { stopped: true, sessionId: id }
+    } catch (error) {
+      logger.warn?.(`dsh-dafeiyu chat: 取消失败: ${error?.message ?? error}`)
+      return { stopped: false, error: String(error?.message ?? error) }
+    }
+  }
+
+  const welcome = async () => {
+    try {
+      const work = await workSummary([])
+      if (!work) {
+        const remembered = memory?.list?.() ?? []
+        const first = remembered[0]
+        return {
+          text: first
+            ? `又见面了。我还记得你的${first.key}是${first.value}，今天想聊点什么？`
+            : '我在这儿，随时可以聊。也可以让我帮你处理视频、写小说。',
+        }
+      }
+      const first = work.split('\n')[0].replace('当前工作会话「', '').replace('」最近：', '')
+      const remembered = memory?.summary?.() ?? ''
+      const tail = work.split('\n').slice(1).filter(Boolean).slice(-1)[0] ?? ''
+      const text = `看到你在弄「${first}」，${tail ? tail.slice(0, 40) + '…' : '要不要接着聊？'}`
+      return { text, memory: remembered }
+    } catch {
+      return { text: '' }
+    }
+  }
+
   const debug = () => ({
     targetId, dedicatedId, manualTarget,
     sessions: [...sessions.values()].map((record) => ({ id: record.id, title: record.title, at: record.at })),
   })
 
-  return { note, state, send, select, buildContext, debug }
+  return { note, state, send, select, buildContext, stop, welcome, debug }
 }
 
 export const CHAT_SERVER_VERSION = 'v5'
