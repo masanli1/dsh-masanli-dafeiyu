@@ -64,12 +64,9 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
         self.backgroundColor = .clear
         self.appearance = NSAppearance(named: .darkAqua)
 
-        let effect = NSVisualEffectView(frame: rect)
-        effect.appearance = NSAppearance(named: .darkAqua)
-        effect.material = .hudWindow
-        effect.blendingMode = .behindWindow
-        effect.state = .active
+        let effect = NSView(frame: rect)
         effect.wantsLayer = true
+        effect.layer?.backgroundColor = NSColor(calibratedRed: 0.10, green: 0.11, blue: 0.13, alpha: 0.97).cgColor
         effect.layer?.cornerRadius = 18
         effect.layer?.masksToBounds = true
         effect.layer?.borderWidth = 1
@@ -241,6 +238,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var windowOrigin: NSPoint?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 单实例：同 bundle id 已经有进程在跑就退出（避免出现两只宠物）
+        if let identifier = Bundle.main.bundleIdentifier {
+            let others = NSRunningApplication.runningApplications(withBundleIdentifier: identifier)
+                .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
+            if !others.isEmpty {
+                NSApp.terminate(nil)
+                return
+            }
+        }
         let env = ProcessInfo.processInfo.environment
         if let webui = env["DSH_DAFEIYU_WEBUI_URL"], let url = URL(string: webui) {
             var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
@@ -460,10 +466,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func placeChat(_ chat: ChatWindow) {
         let pet = window.frame
         var frame = chat.frame
-        frame.origin = NSPoint(x: pet.maxX - frame.width, y: pet.maxY + 8)
-        if let screen = NSScreen.main, frame.maxY > screen.visibleFrame.maxY {
-            frame.origin.y = pet.minY - frame.height - 8
-        }
+        let visible = (NSScreen.main?.visibleFrame) ?? pet
+        var y = pet.maxY + 8
+        if y + frame.height > visible.maxY { y = pet.minY - frame.height - 8 }
+        y = max(visible.minY + 8, min(y, visible.maxY - frame.height - 8))
+        var x = pet.maxX - frame.width
+        x = max(visible.minX + 8, min(x, visible.maxX - frame.width - 8))
+        frame.origin = NSPoint(x: x, y: y)
         chat.setFrame(frame, display: true)
     }
 
