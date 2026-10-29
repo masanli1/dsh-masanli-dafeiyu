@@ -95,9 +95,23 @@ def envelope_from_bands(bands_log, length, n=BANDS):
 
 
 def apply_voice(x, bands_log):
-    """把信号整形成目标包络：增益 = 目标包络 − 信号自身包络（匹配滤波）。"""
+    """把信号整形成目标包络：增益 = 目标包络 − 信号自身包络（匹配滤波）。
+
+    两点保护，避免"一个字一个字"的分裂感：
+    - 只动 150–6000 Hz 的人声频段，低频和高频保持原样（不乱加低频混响感）；
+    - 修正量限幅 ±6 dB 并做跨频段平滑，不制造深谷。
+    """
     source = band_energies(x)
-    correction = np.clip(np.asarray(bands_log) - source, -12.0, 12.0)
+    correction = np.asarray(bands_log, dtype=np.float64) - source
+    edges = band_edges(len(correction))
+    centers = np.sqrt(edges[:-1] * edges[1:])
+    # 人声频段外的修正归零
+    correction = np.where((centers >= 150) & (centers <= 6000), correction, 0.0)
+    # 跨频段平滑（3 点滑动平均）
+    if correction.size >= 5:
+        padded = np.pad(correction, 2, mode="edge")
+        correction = np.convolve(padded, np.ones(5) / 5, mode="valid")
+    correction = np.clip(correction, -2.5, 2.5)
     curve = envelope_from_bands(correction, len(x))
     return np.fft.irfft(np.fft.rfft(x) * curve, len(x))
 

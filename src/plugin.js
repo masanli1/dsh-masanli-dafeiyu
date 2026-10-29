@@ -84,6 +84,7 @@ export const Config = Schema.object({
   voiceEnabled: Schema.boolean().default(true).description('任务播报和打招呼时用系统语音说话（本机 TTS，不走网络）'),
   voiceAnnouncements: Schema.boolean().default(true).description('任务完成或出错时用语音播报一句'),
   voiceName: Schema.string().default('Tingting').description('语音音色（macOS 系统语音名，如 Tingting、Eddy、Flo）'),
+  voiceShaping: Schema.boolean().default(false).description('是否用音色包络给 TTS 染色（关闭=自然发音，更顺）'),
   voicePreset: Schema.string().default('').description('学来的自定义音色（留空 = 原声）。在「声音复刻」里学会后填音色名'),
   voiceRate: Schema.number().min(100).max(320).step(10).default(180).description('语速（每分钟词数）'),
   voiceVolume: Schema.number().min(0.05).max(1).step(0.05).default(0.9).description('语音音量'),
@@ -126,6 +127,7 @@ const defaults = Object.freeze({
   voiceEnabled: true,
   voiceAnnouncements: true,
   voiceName: 'Tingting',
+  voiceShaping: false,
   voicePreset: '',
   voiceRate: 180,
   voiceVolume: 0.9,
@@ -162,6 +164,7 @@ function publicConfig(config = {}) {
     voiceEnabled: config.voiceEnabled !== false,
     voiceAnnouncements: config.voiceAnnouncements !== false,
     voiceName: config.voiceName ?? defaults.voiceName,
+    voiceShaping: config.voiceShaping === true,
     voicePreset: asString(config.voicePreset, ''),
     voiceRate: Number.isFinite(config.voiceRate) ? config.voiceRate : defaults.voiceRate,
     voiceVolume: Number.isFinite(config.voiceVolume) ? config.voiceVolume : defaults.voiceVolume,
@@ -480,7 +483,11 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   let activeTurns = 0
   const greeter = createGreeter({
     config: () => settings.get(),
-    speak: (text, options) => speaker.speak(text, { ...options, preset: asString(settings.get()?.voicePreset, '') }),
+    speak: (text, options) => {
+      const live = settings.get()
+      const shaping = live?.voiceShaping === true
+      return speaker.speak(text, { ...options, preset: shaping ? asString(live?.voicePreset, '') : '' })
+    },
     send: (message) => bridge?.send(message),
     isBusy: () => activeTurns > 0,
     logger,
@@ -514,7 +521,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
         voice: asString(live?.voiceName, 'Tingting'),
         rate: Number(live?.voiceRate ?? 180),
         volume: Number(live?.voiceVolume ?? 0.9),
-        preset: asString(live?.voicePreset, ''),
+        preset: live?.voiceShaping === true ? asString(live?.voicePreset, '') : '',
       })
     } catch {}
   }
@@ -858,7 +865,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
                 voice: asString(live?.voiceName, 'Tingting'),
                 rate: Number(live?.voiceRate ?? 180),
                 volume: Number(live?.voiceVolume ?? 0.9),
-                preset: asString(live?.voicePreset, ''),
+                preset: live?.voiceShaping === true ? asString(live?.voicePreset, '') : '',
               })
               jsonResponse(res, 200, { started })
             } catch (error) {
