@@ -303,6 +303,115 @@ def run_visual(recorder: EventRecorder, snapshot_path: Path | None = None) -> in
                 pass
             return False, 0
 
+    class ChatPanel(QWidget):
+        """跟宠物同一个进程的对话面板：点宠物弹出，贴在它上方。"""
+
+        def __init__(self, api_base: str) -> None:
+            super().__init__(None, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+            from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QPushButton, QTextBrowser, QVBoxLayout
+
+            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+            self.api = api_base.rstrip("/")
+            self._messages: list[dict[str, Any]] = []
+            self.resize(330, 300)
+
+            outer = QVBoxLayout(self)
+            outer.setContentsMargins(10, 10, 10, 10)
+            self.log = QTextBrowser(self)
+            self.log.setStyleSheet(
+                "QTextBrowser{background:rgba(22,26,34,235);color:#eef1f7;border:1px solid rgba(255,255,255,40);"
+                "border-radius:12px;padding:8px;font-size:13px;}"
+            )
+            self.input = QLineEdit(self)
+            self.input.setPlaceholderText("说点什么…")
+            self.input.setStyleSheet(
+                "QLineEdit{background:rgba(22,26,34,235);color:#eef1f7;border:1px solid rgba(255,255,255,40);"
+                "border-radius:10px;padding:7px 10px;font-size:13px;}"
+            )
+            self.send_button = QPushButton("发送", self)
+            self.stop_button = QPushButton("停止", self)
+            self.player_button = QPushButton("▶", self)
+            for button in (self.send_button, self.stop_button, self.player_button):
+                button.setStyleSheet(
+                    "QPushButton{background:rgba(77,107,254,235);color:#fff;border:none;border-radius:10px;"
+                    "padding:7px 12px;font-size:13px;}"
+                )
+            self.stop_button.setStyleSheet(
+                "QPushButton{background:rgba(214,69,69,235);color:#fff;border:none;border-radius:10px;padding:7px 12px;font-size:13px;}"
+            )
+            row = QHBoxLayout()
+            row.setSpacing(6)
+            row.addWidget(self.input, 1)
+            row.addWidget(self.send_button)
+            row.addWidget(self.stop_button)
+            row.addWidget(self.player_button)
+            outer.addWidget(self.log, 1)
+            outer.addLayout(row)
+
+            self.send_button.clicked.connect(self._send)
+            self.input.returnPressed.connect(self._send)
+            self.stop_button.clicked.connect(self._stop)
+            self.player_button.clicked.connect(self._open_player)
+            self.timer = QTimer(self)
+            self.timer.timeout.connect(self.refresh)
+            self.timer.start(1600)
+            self.refresh()
+
+        # ---- HTTP ----
+        def _request(self, path: str, payload: dict[str, Any] | None = None, method: str = "GET") -> dict[str, Any]:
+            import urllib.request
+
+            data = None
+            headers = {}
+            if payload is not None:
+                data = json.dumps(payload).encode("utf-8")
+                headers["content-type"] = "application/json"
+            request = urllib.request.Request(self.api + path, data=data, headers=headers, method=method)
+            with urllib.request.urlopen(request, timeout=4) as response:
+                return json.loads(response.read().decode("utf-8") or "{}")
+
+        def refresh(self) -> None:
+            try:
+                state = self._request("/plugins/dsh-dafeiyu/chat/state")
+            except Exception:
+                return
+            messages = state.get("messages") or []
+            if messages == self._messages:
+                return
+            self._messages = messages
+            parts = []
+            for message in messages[-30:]:
+                text = str(message.get("text") or "")
+                text = text.replace("<dfy-context>", "").split("</dfy-context>")[-1]
+                if not text.strip():
+                    continue
+                role = "我" if message.get("role") == "user" else "大肥鱼"
+                color = "#9fb4ff" if role == "我" else "#eef1f7"
+                safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+                parts.append(f'<p style="margin:4px 0"><b style="color:{color}">{role}：</b>{safe}</p>')
+            self.log.setHtml("".join(parts) or '<p style="opacity:.6">还没有消息</p>')
+            self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
+
+        def _send(self) -> None:
+            text = self.input.text().strip()
+            if not text:
+                return
+            self.input.clear()
+            try:
+                self._request("/plugins/dsh-dafeiyu/chat/send", {"text": text}, "POST")
+            except Exception:
+                pass
+            QTimer.singleShot(700, self.refresh)
+
+        def _stop(self) -> None:
+            try:
+                self._request("/plugins/dsh-dafeiyu/chat/stop", {}, "POST")
+            except Exception:
+                pass
+
+        def _open_player(self) -> None:
+            QDesktopServices.openUrl(QUrl("http://127.0.0.1:7788/"))
+
     class CompanionWindow(QWidget):
         LABELS = {
             "IDLE": "休息中",
@@ -407,6 +516,14 @@ def run_visual(recorder: EventRecorder, snapshot_path: Path | None = None) -> in
             if not self.reduced_motion:
                 self._schedule_micro()
             self.snapshot_saved = False
+            self.chat_panel: ChatPanel | None = None
+            if os.environ.get("DSH_DAFEIYU_CHAT_UI", "1") != "0":
+                try:
+                    base = self.webui_url.rstrip("/")
+                    self.chat_panel = ChatPanel(base)
+                    self.chat_panel.hide()
+                except Exception:
+                    self.chat_panel = None
             self.setWindowTitle("DSH 大肥鱼")
             self.setWindowFlags(
                 Qt.WindowType.FramelessWindowHint
@@ -701,6 +818,30 @@ def run_visual(recorder: EventRecorder, snapshot_path: Path | None = None) -> in
             if (self.width(), self.height()) != old_size:
                 self._move_to_pet(self.pet_x, self.pet_y)
 
+        def toggle_chat(self) -> None:
+            if self.chat_panel is None:
+                return
+            if self.chat_panel.isVisible():
+                self.chat_panel.hide()
+            else:
+                self.chat_panel.refresh()
+                self.place_chat()
+                self.chat_panel.show()
+                self.chat_panel.raise_()
+
+        def place_chat(self) -> None:
+            if self.chat_panel is None:
+                return
+            width = self.chat_panel.width()
+            height = self.chat_panel.height()
+            x = self.pet_x + self.width() - width - 6
+            y = self.pet_y - height - 10
+            screen = self.screen().availableGeometry() if self.screen() else None
+            if screen is not None:
+                x = max(screen.left(), min(x, screen.right() - width))
+                y = max(screen.top(), y)
+            self.chat_panel.move(x, y)
+
         def _apply_window_size(self) -> None:
             pet_width = round(int(manifest["maxFrameWidth"]) * self.scale)
             pet_height = round(int(manifest["maxFrameHeight"]) * self.scale)
@@ -724,6 +865,11 @@ def run_visual(recorder: EventRecorder, snapshot_path: Path | None = None) -> in
             )
 
         def _move_to_pet(self, pet_x: int, pet_y: int) -> None:
+            moved = getattr(self, "_last_pet_pos", None)
+            self._last_pet_pos = (pet_x, pet_y)
+            if moved != (pet_x, pet_y) and getattr(self, "chat_panel", None) is not None and self.chat_panel.isVisible():
+                self.pet_x, self.pet_y = pet_x, pet_y
+                self.place_chat()
             """Resize or move the container around the character's anchor."""
             geometry = self._screen_geometry_at(pet_x, pet_y)
             screen = (geometry.x(), geometry.y(), geometry.width(), geometry.height()) if geometry is not None else None
@@ -1119,6 +1265,7 @@ def run_visual(recorder: EventRecorder, snapshot_path: Path | None = None) -> in
                     self._save_layout()
                 else:
                     self._play_click_interaction(event.position().x(), event.position().y())
+                    self.toggle_chat()
             self.drag_origin = None
             self.pet_origin = None
             self.dragging = False

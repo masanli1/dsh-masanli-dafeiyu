@@ -712,3 +712,21 @@ mood 已经能驱动它的状态气泡。
 - 卡片本身 `pointer-events: none`，只有按钮可点，不影响宠物本体和 DSH 界面；
 - 视觉上：宠物 + 按钮 + 对话 = 一块卡片，而不是三个漂着的零件；
 - 宠物本体仍是 DSH 内建图层，我们只能给它"垫底 + 挂控件"，无法真正塞进它的渲染树。
+
+## 原生本体（chat.52/53）
+
+`runtime/bin/darwin/dsh-dafeiyu-helper.app` 原来是一个编译好的原生二进制，无法直接改。
+现在换成了我们自己写的 Swift 版本：`native/DFYPet.swift`。
+
+一个进程里同时包含：
+
+- 宠物帧动画（读 `assets/pet-manifest.json`，21 个 clip，WebP 直接加载）；
+- 气泡（`pulse` 消息里的文字，右上角圆角气泡，ttl 到期消失）；
+- 对话面板（点她弹出/收起，贴在宠物上方，含输入框、发送、停止、▶ 播放器）；
+- 拖拽移动（拖动<4px 视为点击，切换对话面板）。
+
+协议沿用原来的 stdin JSON（每行一条）：`state` / `pulse` / `config` / `ping` / `shutdown`，
+启动时回 `{"kind":"ready"}`。
+
+回滚：原版二进制备份在 `/tmp/original-helper.bin`，复制回
+`runtime/bin/darwin/dsh-dafeiyu-helper.app/Contents/MacOS/dsh-dafeiyu-helper` 即可。
