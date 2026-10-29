@@ -504,7 +504,9 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       logger.info?.('dsh-dafeiyu is disabled')
       return
     }
-    const helperConfig = config.helper ?? {}
+    // 把当前 WebUI 地址写到一个固定文件：GUI 端口每次启动都会变，
+  // 原生助手靠它拿到最新的接口地址。
+  const helperConfig = config.helper ?? {}
     bridge = new HelperProcess({
       ...helperConfig,
       env: {

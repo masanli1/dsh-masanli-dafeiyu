@@ -472,7 +472,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let balances = message["balances"] as? [[String: Any]],
                let cny = balances.first(where: { ($0["currency"] as? String) == "CNY" }),
                let total = cny["total"] as? String {
-                lastBalanceText = "余额 ¥" + total
+                let value = Double(total) ?? 0
+                lastBalanceText = String(format: "余额 ¥%.2f", value)
                 chatWindow?.updateStatus(state: nil, balance: lastBalanceText, tasks: nil)
             }
         case "ping":
@@ -550,10 +551,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // ---- HTTP ----
+    // 端口每次启动都会变：优先读插件写下的当前地址
+    func currentBaseURL() -> URL {
+        let path = NSHomeDirectory() + "/.dsh/dsh-dafeiyu-webui.txt"
+        if let text = try? String(contentsOfFile: path, encoding: .utf8) {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let url = URL(string: trimmed) { return url }
+        }
+        return baseURL
+    }
+
     func get(_ path: String) -> Data? {
         var result: Data?
         let semaphore = DispatchSemaphore(value: 0)
-        var request = URLRequest(url: baseURL.appendingPathComponent(path))
+        var request = URLRequest(url: currentBaseURL().appendingPathComponent(path))
         request.timeoutInterval = 4
         URLSession.shared.dataTask(with: request) { data, _, _ in
             result = data
@@ -564,7 +575,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func post(_ path: String, _ payload: [String: Any]) {
-        var request = URLRequest(url: baseURL.appendingPathComponent(path))
+        var request = URLRequest(url: currentBaseURL().appendingPathComponent(path))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
