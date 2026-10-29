@@ -320,6 +320,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var lastTasksText = ""
     var lastKnownRemaining: Int? = nil
     var baseURL = URL(string: "http://127.0.0.1:3080")!
+    var microClips: [String] = []
+    var microIntervals: [String: [Int]] = [:]
+    var activityLevel = "normal"
+    var microTimer: Timer?
+    var oneShotClip: String? = nil
     var assetRoot: URL!
     var dragOrigin: NSPoint?
     var windowOrigin: NSPoint?
@@ -371,6 +376,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { _ in self.tick(0.02) }
         // 直接盯 NAS 上的降噪批处理状态文件（不依赖 host 推送）
+        scheduleMicro()
         watchDenoise()
         Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in self.watchDenoise() }
         startStdin()
@@ -392,6 +398,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let data = try? Data(contentsOf: url),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
         stateMap = (object["stateMap"] as? [String: String]) ?? [:]
+        microClips = (object["idleMicroClips"] as? [String]) ?? []
+        microIntervals = (object["idleMicroIntervalsMs"] as? [String: [Int]]) ?? [:]
+        activityLevel = ProcessInfo.processInfo.environment["DSH_DAFEIYU_ACTIVITY_LEVEL"] ?? "normal"
         guard let clipObjects = object["clips"] as? [String: [String: Any]] else { return }
         for (name, info) in clipObjects {
             let frames = (info["frames"] as? [String]) ?? []
@@ -418,7 +427,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             lastFrameAt = Date()
             frameIndex += 1
             if frameIndex >= clip.frames.count {
-                frameIndex = clip.loop ? 0 : clip.frames.count - 1
+                if clip.loop {
+                    frameIndex = 0
+                } else {
+                    frameIndex = clip.frames.count - 1
+                    // 一次性动作放完就回到 idle
+                    if let oneShot = oneShotClip, currentClip == oneShot {
+                        oneShotClip = nil
+                        setState("IDLE")
+                        scheduleMicro()
+                    }
+                }
             }
         }
         if bubbleVisible && Date() > bubbleUntil { bubbleVisible = false }
@@ -431,7 +450,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             currentClip = clip
             frameIndex = 0
             lastFrameAt = Date()
+            if state == "IDLE" {
+                // 先播完手头的一次性动作，再调度下一个
+                if oneShotClip == nil { scheduleMicro() }
+            } else {
+                microTimer?.invalidate()
+                microTimer = nil
+                oneShotClip = nil
+            }
         }
+    }
+
+    func scheduleMicro() {
+        microTimer?.invalidate()
+        guard !microClips.isEmpty, currentClip == "idle" else { return }
+        let range = microIntervals[activityLevel] ?? microIntervals["normal"] ?? [25000, 45000]
+        let delay = Double(Int.random(in: (range.first ?? 25000)...(range.last ?? 45000))) / 1000.0
+        microTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { _ in
+            guard self.currentClip == "idle", let name = self.microClips.randomElement(), self.clips[name] != nil else { return }
+            self.oneShotClip = name
+            self.currentClip = name
+            self.frameIndex = 0
+            self.lastFrameAt = Date()
+        }
+    }
+
+    func playReaction(_ name: String) {
+        guard clips[name] != nil else { return }
+        oneShotClip = name
+        currentClip = name
+        frameIndex = 0
+        lastFrameAt = Date()
+        microTimer?.invalidate()
     }
 
     func showBubble(_ text: String, seconds: TimeInterval) {
@@ -656,7 +706,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dragOrigin = nil
         windowOrigin = nil
         if currentClip == "dragging" { setState("IDLE") }
-        if moved < 4 { toggleChat() }
+        if moved < 4 {
+            if clips["poke"] != nil { playReaction("poke") }
+        }
     }
 
     func toggleChat() {

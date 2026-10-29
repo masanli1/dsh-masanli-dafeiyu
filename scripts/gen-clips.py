@@ -143,6 +143,69 @@ def sleepy(base, n=120):
         out.append(frame)
     return out
 
+
+def jump(base, n=96):
+    """跳一下：起跳压缩 → 腾空 → 落地缓冲。"""
+    out = []
+    for i in range(n):
+        t = (i % 48) / 48.0
+        if t < 0.15:
+            scale = 1.0 - 0.06 * (t / 0.15)
+            dy = 0
+        elif t < 0.75:
+            u = (t - 0.15) / 0.6
+            dy = -46 * math.sin(math.pi * u)
+            scale = 1.0 + 0.05 * math.sin(math.pi * u)
+        else:
+            u = (t - 0.75) / 0.25
+            scale = 1.0 - 0.05 * math.sin(math.pi * u)
+            dy = 0
+        w, h = int(W * (1.0 + (1 - scale) * 0.3)), int(H * scale)
+        img = base[i % len(base)].resize((w, h), Image.LANCZOS)
+        canvas = blank()
+        canvas.alpha_composite(img, ((W - w) // 2, H - h + int(dy)))
+        out.append(canvas)
+    return out
+
+
+def nod(base, n=72):
+    """点头：轻微上下 + 一点点前倾。"""
+    out = []
+    for i in range(n):
+        phase = 2 * math.pi * i / 24
+        dy = int(5 * math.sin(phase))
+        angle = 1.6 * math.sin(phase)
+        img = base[i % len(base)].rotate(angle, resample=Image.BICUBIC, center=(W / 2, H * 0.9))
+        canvas = blank()
+        canvas.alpha_composite(img, (0, dy))
+        out.append(canvas)
+    return out
+
+
+def shake(base, n=60):
+    """摇头：左右快速小幅摆动。"""
+    out = []
+    for i in range(n):
+        dx = int(7 * math.sin(2 * math.pi * i / 10))
+        img = base[i % len(base)].rotate(2.2 * math.sin(2 * math.pi * i / 10), resample=Image.BICUBIC, center=(W / 2, H * 0.85))
+        canvas = blank()
+        canvas.alpha_composite(img, (dx, 0))
+        out.append(canvas)
+    return out
+
+
+def lean(base, n=90):
+    """歪头看你：缓慢倾斜再回正。"""
+    out = []
+    for i in range(n):
+        u = (i % 45) / 45.0
+        angle = 4.2 * math.sin(math.pi * u)
+        img = base[i % len(base)].rotate(angle, resample=Image.BICUBIC, center=(W / 2, H * 0.92))
+        canvas = blank()
+        canvas.alpha_composite(img, (0, 0))
+        out.append(canvas)
+    return out
+
 def main():
     idle = load_clip('idle')
     head = load_clip('head_pat')
@@ -153,6 +216,10 @@ def main():
         'heart': (with_hearts(head), 'derived:head_pat+hearts'),
         'sparkle': (with_sparkles(success), 'derived:success+sparkles'),
         'sleepy': (sleepy(idle), 'derived:idle+zzz'),
+        'jump': (jump(idle), 'derived:idle+jump'),
+        'nod': (nod(idle), 'derived:idle+nod'),
+        'shake': (shake(idle), 'derived:idle+shake'),
+        'lean': (lean(idle), 'derived:idle+lean'),
     }
     manifest = json.load(open(MANIFEST))
     for name, (frames, note) in new.items():
