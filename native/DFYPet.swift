@@ -318,6 +318,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var lastStateText = ""
     var lastBalanceText = ""
     var lastTasksText = ""
+    var lastKnownRemaining: Int? = nil
     var baseURL = URL(string: "http://127.0.0.1:3080")!
     var assetRoot: URL!
     var dragOrigin: NSPoint?
@@ -369,6 +370,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
 
         Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { _ in self.tick(0.02) }
+        // 直接盯 NAS 上的降噪批处理状态文件（不依赖 host 推送）
+        watchDenoise()
+        Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in self.watchDenoise() }
         startStdin()
         respond("ready")
         if ProcessInfo.processInfo.environment["DSH_DAFEIYU_CHAT_OPEN"] == "1" {
@@ -482,7 +486,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func watchDenoise() {
+        let dir = ProcessInfo.processInfo.environment["DSH_DAFEIYU_DENOISE_DIR"] ?? "/Volumes/15226550291/课程"
+        let statePath = dir + "/_denoise-state.json"
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: statePath)),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        let done = (object["done"] as? [String: Any]) ?? [:]
+        let skipped = (object["skipped"] as? [String: Any]) ?? [:]
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir) else { return }
+        var remaining = 0
+        for name in names {
+            if name.hasPrefix(".") || name.contains(".denoise-tmp") { continue }
+            let lower = name.lowercased()
+            if !(lower.hasSuffix(".mp4") || lower.hasSuffix(".mkv") || lower.hasSuffix(".mov") || lower.hasSuffix(".avi") || lower.hasSuffix(".wmv") || lower.hasSuffix(".flv") || lower.hasSuffix(".ts") || lower.hasSuffix(".webm")) { continue }
+            if done[name] != nil || skipped[name] != nil { continue }
+            remaining += 1
+        }
+        let total = done.count + skipped.count + remaining
+        lastTasksText = remaining > 0 ? "任务 \(remaining)" : "空闲"
+        if remaining > 0 {
+            lastStateText = "降噪 \(total - remaining)/\(total)"
+        } else if lastKnownRemaining ?? 0 > 0 {
+            lastStateText = "降噪完成"
+            lastTasksText = "空闲"
+            celebrateMusic()
+        }
+        lastKnownRemaining = remaining
+        chatWindow?.updateStatus(state: lastStateText, balance: nil, tasks: lastTasksText)
+        petView.needsDisplay = true
+    }
+
+    func celebrateMusic() {
+        let dir = (ProcessInfo.processInfo.environment["DSH_DAFEIYU_MUSIC_DIR"] ?? NSHomeDirectory() + "/Music/大肥鱼歌单")
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir) else { return }
+        let tracks = names.filter { name in
+            let lower = name.lowercased()
+            return lower.hasSuffix(".mp4") || lower.hasSuffix(".m4a") || lower.hasSuffix(".mp3") || lower.hasSuffix(".wav")
+        }
+        guard let track = tracks.randomElement() else { return }
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/afplay")
+        task.arguments = ["-v", "0.5", dir + "/" + track]
+        try? task.run()
+        showBubble("降噪全部完成啦，放首歌庆祝一下～", seconds: 8)
+    }
+
     func statusTitle() -> String {
+        if (lastKnownRemaining ?? 0) > 0 { return "大肥鱼在帮你降噪" }
         switch lastStateText {
         case "WORKING", "干活中": return "大肥鱼正在干活"
         case "THINKING", "思考中": return "大肥鱼在思考"

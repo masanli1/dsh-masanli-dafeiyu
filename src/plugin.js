@@ -93,6 +93,10 @@ export const Config = Schema.object({
   preventSleep: Schema.boolean().default(true).description('DSH 有任务在跑时阻止电脑空闲休眠（macOS caffeinate）'),
   preventSleepDisplay: Schema.boolean().default(false).description('连屏幕也保持常亮（默认只防系统休眠）'),
   novelRoot: Schema.string().default('').description('小说项目根目录（留空 = ~/Documents/大肥鱼小说）'),
+  denoiseWatchEnabled: Schema.boolean().default(true).description('盯着 NAS 降噪批处理，把进度显示到状态卡上'),
+  denoiseWatchDir: Schema.string().default('/Volumes/15226550291/课程').description('降噪批处理所在目录'),
+  musicOnDone: Schema.boolean().default(true).description('降噪批处理全部完成后自动放一首音乐'),
+  musicPlaylist: Schema.string().default('~/Music/大肥鱼歌单').description('完成任务后播放的音乐目录'),
   memoryEnabled: Schema.boolean().default(true).description('跨会话长期记忆（偏好、常用路径等）'),
   contextInjection: Schema.boolean().default(true).description('聊天时自动附带工作会话摘要和长期记忆作为上下文'),
   chatMode: Schema.union([
@@ -133,6 +137,10 @@ const defaults = Object.freeze({
   novelRoot: '',
   chatMode: 'dedicated',
   memoryEnabled: true,
+  denoiseWatchEnabled: true,
+  denoiseWatchDir: '/Volumes/15226550291/课程',
+  musicOnDone: true,
+  musicPlaylist: '~/Music/大肥鱼歌单',
   contextInjection: true,
 })
 
@@ -165,6 +173,10 @@ function publicConfig(config = {}) {
     novelRoot: asString(config.novelRoot, ''),
     chatMode: config.chatMode === 'current' ? 'current' : 'dedicated',
     memoryEnabled: config.memoryEnabled !== false,
+    denoiseWatchEnabled: config.denoiseWatchEnabled !== false,
+    denoiseWatchDir: asString(config.denoiseWatchDir, defaults.denoiseWatchDir),
+    musicOnDone: config.musicOnDone !== false,
+    musicPlaylist: asString(config.musicPlaylist, defaults.musicPlaylist),
     contextInjection: config.contextInjection !== false,
   }
 }
@@ -392,6 +404,79 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
     onJobStart: () => { denoiseBusy += 1; syncPower() },
     onJobEnd: () => { denoiseBusy = Math.max(0, denoiseBusy - 1); syncPower() },
   })
+  // 盯着 NAS 上的降噪批处理：进度进状态卡，全部完成时放一首歌。
+  let watchTimer
+  function startDenoiseWatch() {
+    const current = () => settings.get()
+    if (current().denoiseWatchEnabled === false) return
+    let lastRemaining = null
+    let lastDone = 0
+    let sawWork = false
+    const poll = () => {
+      try {
+        const cfg = current()
+        if (cfg.denoiseWatchEnabled === false) return
+        const dir = String(cfg.denoiseWatchDir ?? '').replace(/^~(?=$\/)/, homedir())
+        if (!dir || !fileExists(dir)) return
+        let state = { done: {}, skipped: {} }
+        try { state = JSON.parse(readFileSyncImpl(joinPath(dir, '_denoise-state.json'), 'utf8')) } catch { return }
+        const done = state.done ?? {}
+        const skipped = state.skipped ?? {}
+        let remaining = 0
+        for (const name of readdirSyncImpl(dir)) {
+          if (name.startsWith('.') || '.denoise-tmp' in name) continue
+          if (!/\.(mp4|mkv|mov|avi|wmv|flv|ts|webm)$/i.test(name)) continue
+          if (done[name] || skipped[name]) continue
+          remaining += 1
+        }
+        const total = Object.keys(done).length + Object.keys(skipped).length + remaining
+        if (remaining !== lastRemaining || !watchTimer._sent) {
+          lastRemaining = remaining
+          lastDone = Object.keys(done).length
+          watchTimer._sent = true
+          try {
+            bridge?.send(createMessage(CompanionMessageKind.TASKS, {
+              tasks: remaining > 0 ? [{ title: '降噪批处理', state: 'WORKING' }] : [],
+            }))
+            bridge?.send(createMessage(CompanionMessageKind.TASK, {
+              state: remaining > 0 ? 'WORKING' : 'IDLE',
+              activity: remaining > 0 ? `降噪 ${total - remaining}/${total}` : '',
+            }))
+          } catch {}
+        }
+        if (remaining > 0) sawWork = true
+        if (remaining === 0 && sawWork && !watchTimer._celebrated) {
+          watchTimer._celebrated = true
+          celebrate()
+        }
+      } catch {}
+    }
+    watchTimer = setInterval(poll, 60 * 1000)
+    watchTimer.unref?.()
+    watchTimer._celebrated = false
+    poll()
+  }
+
+  function celebrate() {
+    try {
+      const cfg = settings.get()
+      if (cfg.musicOnDone === false) return
+      const dir = String(cfg.musicPlaylist ?? '').replace(/^~(?=$\/)/, homedir())
+      if (!dir || !fileExists(dir)) return
+      const tracks = readdirSyncImpl(dir).filter((name) => /\.(mp4|m4a|mp3|wav|aac|flac)$/i.test(name))
+      if (tracks.length === 0) return
+      const track = joinPath(dir, tracks[Math.floor(Math.random() * tracks.length)])
+      const child = spawn('/usr/bin/afplay', ['-v', '0.5', track], { stdio: 'ignore', detached: true })
+      child.unref()
+      logger.info?.(`dsh-dafeiyu: 降噪全部完成，播放 ${track}`)
+      pulse('降噪全部完成啦，放首歌庆祝一下～')
+    } catch (error) {
+      logger.warn?.(`dsh-dafeiyu 庆祝失败: ${error?.message ?? error}`)
+    }
+  }
+
+  try { startDenoiseWatch() } catch (error) { logger.warn?.(`dsh-dafeiyu 降噪监视器启动失败: ${error?.message ?? error}`) }
+
   let activeTurns = 0
   const greeter = createGreeter({
     config: () => settings.get(),
@@ -520,6 +605,8 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
         DSH_DAFEIYU_BUBBLE_MODE: String(resolved.bubbleMode ?? defaults.bubbleMode),
         DSH_DAFEIYU_BUBBLE_STATES: (Array.isArray(resolved.bubbleStates) ? resolved.bubbleStates : defaults.bubbleStates).join(','),
         DSH_DAFEIYU_WEBUI_URL: resolveClientTarget({ ...config, ...resolved }).url,
+        DSH_DAFEIYU_DENOISE_DIR: String(resolved.denoiseWatchDir ?? defaults.denoiseWatchDir).replace(/^~(?=$\/)/, homedir()),
+        DSH_DAFEIYU_MUSIC_DIR: String(resolved.musicPlaylist ?? defaults.musicPlaylist).replace(/^~(?=$\/)/, homedir()),
         DSH_DAFEIYU_OPEN_LABEL: resolveClientTarget({ ...config, ...resolved }).label,
         // Serve animations from the installed package instead of the helper's
         // baked-in bundle so derived clips (scripts/gen-clips.py) take effect
