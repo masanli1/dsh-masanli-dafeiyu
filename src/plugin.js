@@ -16,6 +16,7 @@ import { createMemoryStore, registerMemoryTool } from './memory.js'
 import { createMoodStore } from './mood.js'
 import { rememberFacts, extractFacts } from './memory-auto.js'
 import { registerTeslaTool, listSkills, TESLA_CLI, VOICE_CLI, VOICES_DIR } from './tesla.js'
+import { registerBilibiliTool } from './bilibili.js'
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { existsSync as fileExists, readFileSync as readFileSyncImpl, readdirSync as readdirSyncImpl } from 'node:fs'
@@ -1221,6 +1222,11 @@ export function apply(ctx, config = {}) {
     registerNovelTool(ctx, { logger, root: novelRoot })
   } catch (error) {
     logger.error?.(`dsh-dafeiyu 小说工具挂载失败: ${error?.message ?? error}`)
+  }
+  try {
+    registerBilibiliTool(ctx, { logger })
+  } catch (error) {
+    logger.error?.(`dsh-dafeiyu B 站工具挂载失败: ${error?.message ?? error}`)
   }
   try {
     registerTeslaTool(ctx, { logger })

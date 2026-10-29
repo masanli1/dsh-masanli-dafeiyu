@@ -308,7 +308,11 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
     return ''
   }
 
-  const buildContext = async () => {
+  // 只有聊到"工作/项目/任务/进度"这类话题时才注入工作上下文；
+  // 日常闲聊就只是她自己，不当成工作助手。
+  const WORK_HINT = /(工作|项目|任务|进度|代码|程序|脚本|刚才在|之前在做|做到哪|降噪|小说|播放器|批处理|DSH|harness|仓库|git|部署|调试)/i
+
+  const buildContext = async (message = '') => {
     try {
       if (config()?.contextInjection === false) return ''
       const parts = []
@@ -316,7 +320,8 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
       if (remembered) parts.push(`长期记忆：\n${remembered}`)
       // 只排除宠物会话本身；targetId 可能是某个工作会话（turn/start 时更新），不能一起排除。
       const petId = manualTarget || dedicatedId
-      const work = await workSummary([petId].filter(Boolean))
+      const wantsWork = WORK_HINT.test(String(message ?? ''))
+      const work = wantsWork ? await workSummary([petId].filter(Boolean)) : ''
       if (work) parts.push(work)
       if (parts.length === 0) return ''
       return `<dfy-context>\n${parts.join('\n\n').slice(0, 1800)}\n</dfy-context>\n`
@@ -343,7 +348,7 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
         if (result.added.length) logger.info?.(`dsh-dafeiyu 自动记忆: ${result.added.map((f) => f.key + '=' + f.value).join('、')}`)
       }
     } catch {}
-    const context = await buildContext()
+    const context = await buildContext(value)
     const controller = ctx.get?.('sessionController')
     if (!controller?.prompt) throw new Error('当前 Host 没有提供会话写入服务')
     // The controller starts with `signal.throwIfAborted()`, so the cancellation
