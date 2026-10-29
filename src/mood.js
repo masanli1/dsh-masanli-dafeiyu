@@ -22,6 +22,8 @@ export function createMoodStore({ path = MOOD_PATH, now = () => Date.now(), logg
     lastFed: null,
     updatedAt: null,
     met: false,
+    // 生物反馈：心跳、呼吸、压力。它们不是装饰，会反过来影响她的状态。
+    bio: { heartRate: 72, breathing: 16, stress: 0.2 },
   }
 
   try {
@@ -59,17 +61,32 @@ export function createMoodStore({ path = MOOD_PATH, now = () => Date.now(), logg
     if (Number.isFinite(away) && away >= 2) {
       state.happiness = clamp(state.happiness - 0.02 * Math.min(away, 7))
     }
+    // 生物反馈：心率/呼吸朝"当下该有的水平"收敛，压力随时间衰减。
+    const bio = state.bio ?? { heartRate: 72, breathing: 16, stress: 0.2 }
+    bio.stress = clamp(bio.stress - hours * 0.05)
+    const targetHr = 66 + bio.stress * 30 + state.hunger * 6 + (state.sleepiness > 0.7 ? -5 : 0) + state.happiness * 3
+    const targetBreath = 12 + bio.stress * 7 + (state.sleepiness > 0.7 ? -3 : 0)
+    const rate = Math.min(1, Math.max(0.05, hours * 0.35))
+    bio.heartRate = clamp((bio.heartRate + (targetHr - bio.heartRate) * rate) / 200, 0, 1) * 200
+    bio.breathing = Math.max(8, bio.breathing + (targetBreath - bio.breathing) * rate)
+    state.bio = bio
     state.updatedAt = new Date(now()).toISOString()
     return snapshot()
   }
 
   const poke = (kind) => {
     const at = new Date(now()).toISOString()
-    if (kind === 'chat') { state.lastChat = at; state.lastSeen = at; state.happiness = clamp(state.happiness + 0.06); state.met = true }
+    const bio = state.bio ?? (state.bio = { heartRate: 72, breathing: 16, stress: 0.2 })
+    if (kind === 'chat') {
+      state.lastChat = at; state.lastSeen = at; state.happiness = clamp(state.happiness + 0.06); state.met = true
+      bio.stress = clamp(bio.stress - 0.08); bio.heartRate = Math.min(140, bio.heartRate + 6)
+    }
     else if (kind === 'seen') { state.lastSeen = at; state.met = true }
-    else if (kind === 'praise') { state.lastPraise = at; state.happiness = clamp(state.happiness + 0.18) }
+    else if (kind === 'praise') { state.lastPraise = at; state.happiness = clamp(state.happiness + 0.18); bio.stress = clamp(bio.stress - 0.2); bio.heartRate = Math.min(140, bio.heartRate + 4) }
     else if (kind === 'feed') { state.lastFed = at; state.hunger = clamp(state.hunger - 0.5); state.happiness = clamp(state.happiness + 0.05) }
-    else if (kind === 'play') { state.happiness = clamp(state.happiness + 0.12); state.sleepiness = clamp(state.sleepiness + 0.08) }
+    else if (kind === 'play') { state.happiness = clamp(state.happiness + 0.12); state.sleepiness = clamp(state.sleepiness + 0.08); bio.heartRate = Math.min(150, bio.heartRate + 10) }
+    else if (kind === 'stress') { bio.stress = clamp(bio.stress + 0.35); bio.heartRate = Math.min(160, bio.heartRate + 14) }
+    else if (kind === 'calm') { bio.stress = clamp(bio.stress - 0.15); bio.heartRate = Math.max(58, bio.heartRate - 8) }
     else if (kind === 'nap') { state.sleepiness = clamp(state.sleepiness - 0.6) }
     save()
     return snapshot()
@@ -97,6 +114,11 @@ export function createMoodStore({ path = MOOD_PATH, now = () => Date.now(), logg
     hoursSinceChat: Number.isFinite(hoursSince(state.lastChat)) ? Number(hoursSince(state.lastChat).toFixed(1)) : null,
     daysSinceChat: Number.isFinite(daysSince(state.lastChat)) ? Number(daysSince(state.lastChat).toFixed(2)) : null,
     met: state.met,
+    bio: {
+      heartRate: Math.round((state.bio ?? {}).heartRate ?? 72),
+      breathing: Number(((state.bio ?? {}).breathing ?? 16).toFixed(1)),
+      stress: Number(((state.bio ?? {}).stress ?? 0.2).toFixed(3)),
+    },
     path,
   })
 

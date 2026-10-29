@@ -600,8 +600,8 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
     try {
       for (const message of reducer.handle(session, event)) {
         bridge.send(message)
-        if (message.kind === 'state' && message.state === 'SUCCESS') greeter.announce('success')
-        if (message.kind === 'state' && message.state === 'ERROR') greeter.announce('error')
+        if (message.kind === 'state' && message.state === 'SUCCESS') { greeter.announce('success'); try { mood.poke('calm') } catch {} }
+        if (message.kind === 'state' && message.state === 'ERROR') { greeter.announce('error'); try { mood.poke('stress') } catch {} }
       }
     } catch (error) {
       logger.error?.('dsh-dafeiyu failed to handle session event', error)
