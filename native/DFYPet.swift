@@ -319,6 +319,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var lastBalanceText = ""
     var lastTasksText = ""
     var lastKnownRemaining: Int? = nil
+    var hunger: Double = 0
+    var bubbleText2: String = ""
     var baseURL = URL(string: "http://127.0.0.1:3080")!
     var microClips: [String] = []
     var microIntervals: [String: [Int]] = [:]
@@ -378,6 +380,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 直接盯 NAS 上的降噪批处理状态文件（不依赖 host 推送）
         scheduleMicro()
         watchDenoise()
+        fetchMood()
+        Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in self.fetchMood() }
         Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in self.watchDenoise() }
         startStdin()
         respond("ready")
@@ -467,7 +471,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let range = microIntervals[activityLevel] ?? microIntervals["normal"] ?? [25000, 45000]
         let delay = Double(Int.random(in: (range.first ?? 25000)...(range.last ?? 45000))) / 1000.0
         microTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { _ in
-            guard self.currentClip == "idle", let name = self.microClips.randomElement(), self.clips[name] != nil else { return }
+            guard self.currentClip == "idle", self.clips.count > 0 else { return }
+            var name = self.microClips.randomElement() ?? "idle"
+            if self.hunger > 0.6, self.clips["eat_rice"] != nil, Double.random(in: 0...1) < 0.65 {
+                name = "eat_rice"
+            }
             self.oneShotClip = name
             self.currentClip = name
             self.frameIndex = 0
@@ -523,8 +531,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ]
             let text = "账户 " + lastBalanceText as NSString
             let size = text.size(withAttributes: rightAttrs)
-            text.draw(at: NSPoint(x: card.maxX - 16 - size.width, y: card.minY + 12), withAttributes: rightAttrs)
+            text.draw(at: NSPoint(x: card.maxX - 16 - size.width, y: card.minY + 50), withAttributes: rightAttrs)
         }
+        let hungerText = String(format: "饿 %.0f%%", hunger * 100)
+        let hungerAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11.5),
+            .foregroundColor: hunger > 0.65 ? NSColor(calibratedRed: 0.78, green: 0.35, blue: 0.25, alpha: 1)
+                                           : NSColor(calibratedWhite: 0.45, alpha: 1),
+        ]
+        let hungerString = hungerText as NSString
+        let hungerSize = hungerString.size(withAttributes: hungerAttrs)
+        hungerString.draw(at: NSPoint(x: card.maxX - 16 - hungerSize.width, y: card.minY + 12), withAttributes: hungerAttrs)
         if !lastTasksText.isEmpty {
             let rightAttrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 11.5),
@@ -532,8 +549,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ]
             let text = lastTasksText as NSString
             let size = text.size(withAttributes: rightAttrs)
-            text.draw(at: NSPoint(x: card.maxX - 16 - size.width, y: card.minY + 30), withAttributes: rightAttrs)
+            text.draw(at: NSPoint(x: card.maxX - 16 - size.width, y: card.minY + 32), withAttributes: rightAttrs)
         }
+    }
+
+    func fetchMood() {
+        guard let data = get("/plugins/dsh-dafeiyu/mood"),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        if let value = object["hunger"] as? Double { hunger = min(1, max(0, value)) }
+        petView.needsDisplay = true
     }
 
     func watchDenoise() {
