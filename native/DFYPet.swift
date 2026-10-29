@@ -32,6 +32,13 @@ final class PetView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        if let app = app {
+            let point = event.locationInWindow
+            if app.feedButtonRect.contains(point) {
+                app.feed()
+                return
+            }
+        }
         if event.clickCount == 2 {
             app?.openChat()
             return
@@ -161,6 +168,8 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
         let stop = makeButton(title: "停止", frame: NSRect(x: rect.width - 96, y: 16, width: 44, height: 30), action: #selector(stopTapped))
         stop.contentTintColor = .systemRed
         let player = makeButton(title: "▶", frame: NSRect(x: rect.width - 48, y: 16, width: 36, height: 30), action: #selector(playerTapped))
+        let feed = makeButton(title: "🍚", frame: NSRect(x: rect.width - 84, y: 16, width: 32, height: 30), action: #selector(feedTapped))
+        effect.addSubview(feed)
         effect.addSubview(send)
         effect.addSubview(stop)
         effect.addSubview(player)
@@ -250,6 +259,7 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
 
     @objc private func stopTapped() { app?.post("/plugins/dsh-dafeiyu/chat/stop", [:]) }
     @objc private func playerTapped() { app?.openPlayer() }
+    @objc private func feedTapped() { app?.feed() }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         if selector == #selector(NSResponder.insertNewline(_:)) { sendTapped(); return true }
@@ -320,7 +330,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var lastTasksText = ""
     var lastKnownRemaining: Int? = nil
     var hunger: Double = 0
-    var bubbleText2: String = ""
+    var feedButtonRect: NSRect = .zero
     var baseURL = URL(string: "http://127.0.0.1:3080")!
     var microClips: [String] = []
     var microIntervals: [String: [Int]] = [:]
@@ -542,6 +552,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let hungerString = hungerText as NSString
         let hungerSize = hungerString.size(withAttributes: hungerAttrs)
         hungerString.draw(at: NSPoint(x: card.maxX - 16 - hungerSize.width, y: card.minY + 12), withAttributes: hungerAttrs)
+        // 左下角"🍚 喂食"按钮
+        let feedRect = NSRect(x: card.minX + 12, y: card.minY + 8, width: 74, height: 24)
+        feedButtonRect = feedRect
+        let feedPath = NSBezierPath(roundedRect: feedRect, xRadius: 12, yRadius: 12)
+        NSColor(calibratedRed: 0.95, green: 0.93, blue: 0.88, alpha: 1).setFill()
+        feedPath.fill()
+        NSColor(calibratedWhite: 0.35, alpha: 0.25).setStroke()
+        feedPath.lineWidth = 1
+        feedPath.stroke()
+        let feedAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11.5, weight: .medium),
+            .foregroundColor: NSColor(calibratedWhite: 0.25, alpha: 1),
+        ]
+        ("🍚 喂食" as NSString).draw(at: NSPoint(x: feedRect.minX + 10, y: feedRect.minY + 5), withAttributes: feedAttrs)
+
         if !lastTasksText.isEmpty {
             let rightAttrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 11.5),
@@ -588,6 +613,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lastKnownRemaining = remaining
         chatWindow?.updateStatus(state: lastStateText, balance: nil, tasks: lastTasksText)
         petView.needsDisplay = true
+    }
+
+    func feed() {
+        post("/plugins/dsh-dafeiyu/mood", ["action": "feed"])
+        playReaction("eat_rice")
+        showBubble("谢谢，真好吃！", seconds: 3)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.fetchMood() }
     }
 
     func celebrateMusic() {
