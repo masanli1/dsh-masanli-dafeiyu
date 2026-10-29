@@ -20,17 +20,22 @@ final class PetView: NSView {
         if let image = app.currentFrame() {
             let size = image.size
             let target = NSRect(x: (bounds.width - size.width) / 2,
-                                y: 0,
+                                y: bounds.height - size.height,
                                 width: size.width,
                                 height: size.height)
             image.draw(in: target)
         }
+        app.drawStatusCard(in: bounds)
         if app.bubbleVisible, let bubble = app.bubbleText as String? {
             app.drawBubble(text: bubble, in: bounds)
         }
     }
 
     override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 {
+            app?.openChat()
+            return
+        }
         app?.startDrag(event)
     }
 
@@ -326,7 +331,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         assetRoot = bundleRoot.appendingPathComponent("pet")
         loadManifest(from: bundleRoot.appendingPathComponent("pet-manifest.json"))
 
-        let size = NSSize(width: 412, height: 344)
+        let size = NSSize(width: 412, height: 344 + 96)
         window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                           styleMask: [.borderless], backing: .buffered, defer: false)
         window.isOpaque = false
@@ -408,6 +413,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         bubbleVisible = true
         bubbleUntil = Date().addingTimeInterval(seconds)
         petView.needsDisplay = true
+    }
+
+    // 复刻原来的状态卡：标题 / 明细 / 余额
+    func drawStatusCard(in bounds: NSRect) {
+        let cardHeight: CGFloat = 84
+        let card = NSRect(x: 8, y: bounds.height - cardHeight - 6, width: bounds.width - 16, height: cardHeight)
+        let path = NSBezierPath(roundedRect: card, xRadius: 16, yRadius: 16)
+        NSColor(calibratedWhite: 1.0, alpha: 0.97).setFill()
+        path.fill()
+        NSColor(calibratedWhite: 0, alpha: 0.10).setStroke()
+        path.lineWidth = 1
+        path.stroke()
+
+        let title = statusTitle()
+        let titleAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 14, weight: .semibold),
+            .foregroundColor: NSColor(calibratedWhite: 0.10, alpha: 1),
+        ]
+        (title as NSString).draw(at: NSPoint(x: card.minX + 16, y: card.maxY - 30), withAttributes: titleAttrs)
+
+        let detailAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11.5),
+            .foregroundColor: NSColor(calibratedWhite: 0.45, alpha: 1),
+        ]
+        (statusDetail() as NSString).draw(at: NSPoint(x: card.minX + 16, y: card.maxY - 48), withAttributes: detailAttrs)
+
+        if !lastBalanceText.isEmpty {
+            let rightAttrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 11.5),
+                .foregroundColor: NSColor(calibratedWhite: 0.45, alpha: 1),
+            ]
+            let text = "账户 " + lastBalanceText as NSString
+            let size = text.size(withAttributes: rightAttrs)
+            text.draw(at: NSPoint(x: card.maxX - 16 - size.width, y: card.minY + 12), withAttributes: rightAttrs)
+        }
+        if !lastTasksText.isEmpty {
+            let rightAttrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 11.5),
+                .foregroundColor: NSColor(calibratedWhite: 0.45, alpha: 1),
+            ]
+            let text = lastTasksText as NSString
+            let size = text.size(withAttributes: rightAttrs)
+            text.draw(at: NSPoint(x: card.maxX - 16 - size.width, y: card.minY + 30), withAttributes: rightAttrs)
+        }
+    }
+
+    func statusTitle() -> String {
+        switch lastStateText {
+        case "WORKING", "干活中": return "大肥鱼正在干活"
+        case "THINKING", "思考中": return "大肥鱼在思考"
+        case "WAITING", "等你呢": return "大肥鱼在等你"
+        case "SUCCESS", "完成啦": return "大肥鱼搞定啦"
+        case "ERROR", "出问题了": return "大肥鱼遇到点问题"
+        default: return "大肥鱼陪你待命"
+        }
+    }
+
+    func statusDetail() -> String {
+        lastStateText.isEmpty ? "DSH · 等待下一次任务" : "DSH · " + lastStateText
+    }
+
+    func openChat() {
+        if chatWindow == nil { chatWindow = ChatWindow(app: self) }
+        chatWindow?.showExpanded()
+        placeChat(chatWindow!)
+        chatWindow?.orderFront(nil)
+        chatWindow?.makeKey()
+        chatWindow?.startPolling()
     }
 
     func drawBubble(text: String, in bounds: NSRect) {
