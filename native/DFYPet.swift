@@ -20,7 +20,7 @@ final class PetView: NSView {
         if let image = app.currentFrame() {
             let size = image.size
             let target = NSRect(x: (bounds.width - size.width) / 2,
-                                y: bounds.height - size.height,
+                                y: 0,
                                 width: size.width,
                                 height: size.height)
             image.draw(in: target)
@@ -440,7 +440,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 复刻原来的状态卡：标题 / 明细 / 余额
     func drawStatusCard(in bounds: NSRect) {
         let cardHeight: CGFloat = 84
-        let card = NSRect(x: 8, y: bounds.height - cardHeight - 6, width: bounds.width - 16, height: cardHeight)
+        let gap: CGFloat = 12
+        let card = NSRect(x: 8, y: 344 + gap, width: bounds.width - 16, height: cardHeight)
         let path = NSBezierPath(roundedRect: card, xRadius: 16, yRadius: 16)
         NSColor(calibratedWhite: 1.0, alpha: 0.97).setFill()
         path.fill()
