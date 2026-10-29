@@ -62,15 +62,15 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
         self.isOpaque = false
         self.hasShadow = true
         self.backgroundColor = .clear
-        self.appearance = NSAppearance(named: .darkAqua)
+        self.appearance = NSAppearance(named: .aqua)
 
         let effect = NSView(frame: rect)
         effect.wantsLayer = true
-        effect.layer?.backgroundColor = NSColor(calibratedRed: 0.10, green: 0.11, blue: 0.13, alpha: 0.97).cgColor
+        effect.layer?.backgroundColor = NSColor(calibratedWhite: 0.99, alpha: 1).cgColor
         effect.layer?.cornerRadius = 18
         effect.layer?.masksToBounds = true
         effect.layer?.borderWidth = 1
-        effect.layer?.borderColor = NSColor(calibratedWhite: 1, alpha: 0.18).cgColor
+        effect.layer?.borderColor = NSColor(calibratedWhite: 0, alpha: 0.14).cgColor
 
         func label(_ text: String, size: CGFloat, weight: NSFont.Weight, alpha: CGFloat) -> NSTextField {
             let field = NSTextField(labelWithString: text)
@@ -80,23 +80,23 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
         }
 
         titleLabel.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
-        titleLabel.textColor = NSColor(calibratedWhite: 0.98, alpha: 1)
+        titleLabel.textColor = NSColor(calibratedWhite: 0.10, alpha: 1)
         titleLabel.frame = NSRect(x: 16, y: rect.height - 30, width: 120, height: 18)
         effect.addSubview(titleLabel)
 
         stateLabel.font = NSFont.systemFont(ofSize: 11.5)
-        stateLabel.textColor = NSColor(calibratedWhite: 0.9, alpha: 0.8)
+        stateLabel.textColor = NSColor(calibratedWhite: 0.35, alpha: 1)
         stateLabel.frame = NSRect(x: 16, y: rect.height - 50, width: 200, height: 16)
         effect.addSubview(stateLabel)
 
         balanceLabel.font = NSFont.systemFont(ofSize: 11.5)
-        balanceLabel.textColor = NSColor(calibratedWhite: 0.9, alpha: 0.7)
+        balanceLabel.textColor = NSColor(calibratedWhite: 0.30, alpha: 1)
         balanceLabel.alignment = .right
         balanceLabel.frame = NSRect(x: rect.width - 170, y: rect.height - 30, width: 154, height: 16)
         effect.addSubview(balanceLabel)
 
         taskLabel.font = NSFont.systemFont(ofSize: 11.5)
-        taskLabel.textColor = NSColor(calibratedWhite: 0.9, alpha: 0.7)
+        taskLabel.textColor = NSColor(calibratedWhite: 0.40, alpha: 1)
         taskLabel.alignment = .right
         taskLabel.frame = NSRect(x: rect.width - 170, y: rect.height - 50, width: 154, height: 16)
         effect.addSubview(taskLabel)
@@ -112,7 +112,7 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
         logView.frame = NSRect(x: 0, y: 0, width: rect.width - 24, height: rect.height - 128)
         logView.isEditable = false
         logView.drawsBackground = false
-        logView.textColor = NSColor(calibratedWhite: 0.95, alpha: 1)
+        logView.textColor = NSColor(calibratedWhite: 0.12, alpha: 1)
         logView.font = NSFont.systemFont(ofSize: 13)
         logView.textContainerInset = NSSize(width: 4, height: 8)
         logView.isAutomaticQuoteSubstitutionEnabled = false
@@ -122,8 +122,8 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
         input.frame = NSRect(x: 12, y: 16, width: rect.width - 160, height: 30)
         input.placeholderString = "说点什么…"
         input.font = NSFont.systemFont(ofSize: 13)
-        input.textColor = NSColor(calibratedWhite: 0.96, alpha: 1)
-        input.backgroundColor = NSColor(calibratedWhite: 1, alpha: 0.10)
+        input.textColor = NSColor(calibratedWhite: 0.12, alpha: 1)
+        input.backgroundColor = NSColor(calibratedWhite: 0.94, alpha: 1)
         input.isBordered = false
         input.wantsLayer = true
         input.layer?.cornerRadius = 9
@@ -198,12 +198,12 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
             let who = isUser ? "我" : "大肥鱼"
             let header = NSMutableAttributedString(string: who + "\n", attributes: [
                 .font: NSFont.systemFont(ofSize: 11.5, weight: .semibold),
-                .foregroundColor: isUser ? NSColor(calibratedRed: 0.62, green: 0.74, blue: 1, alpha: 1)
-                                        : NSColor(calibratedRed: 0.55, green: 0.92, blue: 0.75, alpha: 1),
+                .foregroundColor: isUser ? NSColor(calibratedRed: 0.16, green: 0.36, blue: 0.85, alpha: 1)
+                                        : NSColor(calibratedRed: 0.10, green: 0.50, blue: 0.36, alpha: 1),
             ])
             let body = NSAttributedString(string: text + "\n", attributes: [
                 .font: NSFont.systemFont(ofSize: 13),
-                .foregroundColor: NSColor(calibratedWhite: 0.95, alpha: 1),
+                .foregroundColor: NSColor(calibratedWhite: 0.13, alpha: 1),
                 .paragraphStyle: paragraph,
             ])
             attributed.append(header)
@@ -212,7 +212,7 @@ final class ChatWindow: NSPanel, NSTextFieldDelegate {
         if attributed.length == 0 {
             attributed.append(NSAttributedString(string: "还没有消息，说点什么吧。", attributes: [
                 .font: NSFont.systemFont(ofSize: 13),
-                .foregroundColor: NSColor(calibratedWhite: 0.85, alpha: 0.6),
+                .foregroundColor: NSColor(calibratedWhite: 0.45, alpha: 1),
             ]))
         }
         logView.textStorage?.setAttributedString(attributed)
@@ -232,6 +232,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var bubbleText = ""
     var bubbleVisible = false
     var bubbleUntil = Date()
+    var lastStateText = ""
+    var lastBalanceText = ""
+    var lastTasksText = ""
     var baseURL = URL(string: "http://127.0.0.1:3080")!
     var assetRoot: URL!
     var dragOrigin: NSPoint?
@@ -401,17 +404,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case "task":
             var detail = (message["activity"] as? String) ?? (message["state"] as? String) ?? ""
             if let text = message["detail"] as? String, !text.isEmpty { detail = text }
+            lastStateText = detail
             chatWindow?.updateStatus(state: detail.isEmpty ? nil : detail, balance: nil, tasks: nil)
         case "tasks":
             let items = (message["tasks"] as? [[String: Any]]) ?? []
             let active = items.filter { (($0["state"] as? String) ?? "") != "IDLE" && (($0["state"] as? String) ?? "") != "DONE" }
             let summary = active.isEmpty ? "空闲" : "任务 \((active.count))"
+            lastTasksText = summary
             chatWindow?.updateStatus(state: nil, balance: nil, tasks: summary)
         case "balance":
             if let balances = message["balances"] as? [[String: Any]],
                let cny = balances.first(where: { ($0["currency"] as? String) == "CNY" }),
                let total = cny["total"] as? String {
-                chatWindow?.updateStatus(state: nil, balance: "余额 ¥" + total, tasks: nil)
+                lastBalanceText = "余额 ¥" + total
+                chatWindow?.updateStatus(state: nil, balance: lastBalanceText, tasks: nil)
             }
         case "ping":
             respond("pong")
@@ -451,7 +457,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func toggleChat() {
-        if chatWindow == nil { chatWindow = ChatWindow(app: self) }
+        if chatWindow == nil {
+            chatWindow = ChatWindow(app: self)
+            chatWindow?.updateStatus(state: lastStateText.isEmpty ? nil : lastStateText,
+                                     balance: lastBalanceText.isEmpty ? nil : lastBalanceText,
+                                     tasks: lastTasksText.isEmpty ? nil : lastTasksText)
+        }
         guard let chat = chatWindow else { return }
         if chat.isVisible {
             chat.orderOut(nil)
