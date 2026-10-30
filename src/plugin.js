@@ -116,8 +116,6 @@ export const Config = Schema.object({
     url: Schema.string().default('').description('webhook 或推送地址'),
     token: Schema.string().default('').description('PushPlus 的 token（其他类型可留空）'),
   })).default([]).description('消息推送 webhook：企业微信/飞书/钉钉/Slack 群机器人地址'),
-  directorEnabled: true,
-  directorIntervalMinutes: 45,
   denoiseWatchEnabled: Schema.boolean().default(true).description('盯着 NAS 降噪批处理，把进度显示到状态卡上'),
   denoiseWatchDir: Schema.string().default('/Volumes/15226550291/课程').description('降噪批处理所在目录'),
   musicOnDone: Schema.boolean().default(true).description('降噪批处理全部完成后自动放一首音乐'),
@@ -135,6 +133,8 @@ export const Config = Schema.object({
 for (const [key, field] of Object.entries(Config.dict)) Config.dict[key] = field.volatile()
 
 const defaults = Object.freeze({
+  directorEnabled: true,
+  directorIntervalMinutes: 45,
   enabled: true,
   scale: 1,
   bubbleScale: 1,
