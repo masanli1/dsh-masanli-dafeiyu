@@ -572,6 +572,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         petView.needsDisplay = true
     }
 
+    // 中间厚、两端尖的新月形（动漫刀光的形状）
+    func crescentPath(center: NSPoint, radius: CGFloat, startDeg: Double, endDeg: Double, maxWidth: CGFloat) -> NSBezierPath {
+        let steps = 48
+        let path = NSBezierPath()
+        var outer: [NSPoint] = []
+        var inner: [NSPoint] = []
+        for index in 0...steps {
+            let t = Double(index) / Double(steps)
+            let angle = (startDeg + (endDeg - startDeg) * t) * Double.pi / 180
+            // 中间最宽，两端趋近 0
+            let width = maxWidth * CGFloat(sin(Double.pi * t))
+            let r1 = radius + width / 2
+            let r2 = radius - width / 2
+            outer.append(NSPoint(x: center.x + CGFloat(cos(angle)) * r1, y: center.y + CGFloat(sin(angle)) * r1))
+            inner.append(NSPoint(x: center.x + CGFloat(cos(angle)) * r2, y: center.y + CGFloat(sin(angle)) * r2))
+        }
+        path.move(to: outer[0])
+        for point in outer.dropFirst() { path.line(to: point) }
+        for point in inner.reversed() { path.line(to: point) }
+        path.close()
+        return path
+    }
+
     func showCard(seconds: TimeInterval = 8) {
         cardVisible = true
         cardHideAt = Date().addingTimeInterval(seconds)
@@ -706,7 +729,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let now = Date().timeIntervalSinceReferenceDate
         drawUltimateIfNeeded(in: bounds, now: now)
         let flash = max(0, sin(now * 2.1))            // 0..1 呼吸式闪光
-        let burst = pow(max(0, sin(now * 0.9)), 6)     // 每 ~3.5 秒一次强劈
+        let burst = ProcessInfo.processInfo.environment["DSH_DAFEIYU_FORCE_BURST"] == "1"
+            ? 1.0
+            : pow(max(0, sin(now * 0.9)), 6)           // 每 ~3.5 秒一次强劈
 
         // 1) 三层径向柔光：中心亮、边缘完全透明（没有硬边圆圈）
         let center = NSPoint(x: bounds.midX, y: bounds.height * 0.46)
@@ -731,18 +756,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let bladeStart = NSPoint(x: bounds.midX - bounds.width * 0.62, y: bounds.height * 0.05)
         let bladeEnd = NSPoint(x: bounds.midX + bounds.width * 0.62, y: bounds.height * 0.92)
         if !slashing && burst > 0.2 {
-        let blade = NSBezierPath()
-        blade.move(to: bladeStart)
-        blade.line(to: bladeEnd)
-        blade.lineWidth = 10 + 22 * burst
-        NSColor(calibratedRed: 0.75, green: 0.55, blue: 1.0, alpha: 0.55 + 0.35 * burst).setStroke()
-        blade.stroke()
-        let core = NSBezierPath()
-        core.move(to: bladeStart)
-        core.line(to: bladeEnd)
-        core.lineWidth = 3 + 7 * burst
-        NSColor(calibratedWhite: 1, alpha: 0.75 + 0.25 * burst).setStroke()
-        core.stroke()
+            // 新月形刀光：中间最厚、两端收成尖，三层叠出光晕
+            let cx = bounds.midX, cy = bounds.height * 0.46
+            let radius = bounds.width * 0.46
+            let start = -140.0 + 40.0 * (1 - burst)
+            let end = 40.0 - 40.0 * (1 - burst)
+            for (width, alpha, color) in [
+                (34.0, 0.18, NSColor(calibratedRed: 0.65, green: 0.45, blue: 1.0, alpha: 1)),
+                (18.0, 0.45, NSColor(calibratedRed: 0.78, green: 0.62, blue: 1.0, alpha: 1)),
+                (7.0, 0.95, NSColor(calibratedWhite: 1, alpha: 1)),
+            ] as [(Double, Double, NSColor)] {
+                let shape = crescentPath(center: NSPoint(x: cx, y: cy), radius: radius,
+                                         startDeg: start, endDeg: end, maxWidth: width)
+                color.withAlphaComponent(alpha * (0.55 + 0.45 * burst)).setFill()
+                shape.fill()
+            }
         }
 
         // 2.5) 劈砍弧光
