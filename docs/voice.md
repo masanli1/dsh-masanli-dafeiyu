@@ -107,3 +107,50 @@ EQ 包络匹配（`python/tesla/voice_cli.py`）。能改变"亮/闷"，改变�
   → 两遍 OCR 按 y 坐标合并；
 - 233 小时全量 OCR 约 35–90 小时，先做 20–30 小时的精选子集；
 - 文本用 OCR（精确）+ ASR（时间戳）互校。
+
+## 三、克隆音色 TTS（本机 GPT-SoVITS）
+
+### 链路
+
+```
+文字 ──► GPT-SoVITS api_v2.py (127.0.0.1:9880) ──► wav ──► afplay
+                  ▲
+     参考音频 + 参考文本（~/Documents/大肥鱼声音/ref/teacher.wav + .txt）
+```
+
+插件里 `src/voice-tts.js` 负责：按需拉起服务（首次约 30–60 秒加载模型）、
+常驻复用、排队合成、播放，失败自动回落到系统语音。
+
+### 打开
+
+设置 → 语音 → **说话方式 → 克隆音色（老师的声音）**。
+
+### 训练（可选，效果更好）
+
+```bash
+# 1) 从视频做数据集（OCR 字幕取原文，按字幕卡切音频，32k）
+python python/voice/dataset_ocr.py build --limit 900
+
+# 2) 转成 GPT-SoVITS 的特征
+python python/voice/train_gsv.py prepare --name teacher
+
+# 3) 训练 SoVITS（音色）
+python python/voice/train_gsv.py s2 --name teacher --epochs 8 --batch 4
+```
+
+产物：`~/Downloads/dfy/gpt-sovits/logs/teacher/`（`G_latest.pth` 每轮更新）、
+`logs/teacher_weights/*.pth`（每 N 轮导出）。
+
+换模型不用重启服务：
+
+```bash
+curl "http://127.0.0.1:9880/set_sovits_weights?weights_path=/绝对路径/G_xxx.pth"
+```
+
+### 速度（M4 CPU，16GB）
+
+| 环节 | 实测 |
+| --- | --- |
+| 参考音频 6 秒 + 一句 4 秒的话 | 3.5–4.6 秒 |
+| 首次加载模型 | 30–60 秒 |
+| SoVITS 训练 0.66 小时数据、130 步/轮 | 约 17 分钟/轮 |

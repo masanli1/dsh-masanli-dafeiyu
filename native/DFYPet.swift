@@ -23,7 +23,17 @@ final class PetView: NSView {
                                 y: 0,
                                 width: size.width,
                                 height: size.height)
-            image.draw(in: target)
+            // 学来的出场视角：终极技期间按镜头参数缩放并下移（仰视感）
+            if let context = NSGraphicsContext.current?.cgContext, app.cameraScale != 1 || app.cameraOffsetY != 0 {
+                context.saveGState()
+                context.translateBy(x: bounds.midX, y: bounds.midY + app.cameraOffsetY)
+                context.scaleBy(x: app.cameraScale, y: app.cameraScale)
+                context.translateBy(x: -bounds.midX, y: -bounds.midY)
+                image.draw(in: target)
+                context.restoreGState()
+            } else {
+                image.draw(in: target)
+            }
         }
         app.drawEvolution(in: bounds)
         app.drawStatusCard(in: bounds)
@@ -368,6 +378,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var sparkPhase: Double = 0
     var ultimateStart: Date? = nil
     var ultimateFrames: [NSImage] = []
+    var scenePlate: NSImage? = nil
+    var sceneParams: [String: Any] = [:]
+    var cameraScale: CGFloat = 1
+    var cameraOffsetY: CGFloat = 0
     var voiceName = "Tingting"
     var voiceRate = 170
     var feedButtonRect: NSRect = .zero
@@ -441,6 +455,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         loadUltimateFrames()
+        loadScene()
         if let forced = ProcessInfo.processInfo.environment["DSH_DAFEIYU_FORCE_CLIP"], clips[forced] != nil {
             currentClip = forced
             frameIndex = 0
@@ -829,11 +844,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 
     func drawUltimateIfNeeded(in bounds: NSRect, now: TimeInterval) {
-        guard let start = ultimateStart else { return }
+        guard let start = ultimateStart else { cameraScale = 1; cameraOffsetY = 0; return }
         let elapsed = Date().timeIntervalSince(start)
         let duration = 2.2
         if elapsed > duration { ultimateStart = nil; return }
         let t = elapsed / duration
+
+        // 学来的出场背景：压暗铺底，随镜头推近轻微放大
+        if let plate = scenePlate {
+            let zoom = 1.0 + CGFloat(t) * 0.06
+            let rect = NSRect(x: bounds.midX - bounds.width * zoom / 2,
+                              y: bounds.midY - bounds.height * zoom / 2,
+                              width: bounds.width * zoom, height: bounds.height * zoom)
+            plate.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 0.85)
+            NSColor(calibratedWhite: 0, alpha: 0.25).setFill()
+            bounds.fill()
+        }
+
+        // 学来的出场视角：主体放大 + 下移（仰视感），并做推镜
+        let baseScale = CGFloat((sceneParams["scale"] as? Double) ?? 1.0)
+        let dolly = CGFloat((sceneParams["dolly"] as? Double) ?? 1.0)
+        cameraScale = baseScale * (1.0 + min(0.10, (dolly - 1.0) * 0.05) * CGFloat(t))
+        cameraOffsetY = -(min(1.0, CGFloat(t) * 2)) * 6
 
         if !ultimateFrames.isEmpty {
             let fps = 12.0
@@ -925,6 +957,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 path.lineWidth = 2.5
                 NSColor(calibratedRed: 0.82, green: 0.68, blue: 1.0, alpha: 0.85 * alpha).setStroke()
                 path.stroke()
+            }
+        }
+    }
+
+    func loadScene() {
+        let dir = NSHomeDirectory() + "/.dsh/dsh-dafeiyu/effects/scene"
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: dir + "/scene.json")),
+           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            sceneParams = object
+            if let name = object["backdrop"] as? String {
+                scenePlate = NSImage(contentsOfFile: dir + "/" + name)
             }
         }
     }

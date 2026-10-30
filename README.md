@@ -1027,3 +1027,15 @@ Lv.4 不再只是光晕，而是一整套「劈刀」演出（每帧程序化绘
 
 工具：`motion action=learn video=/path/xx.mp4 name=raiden`
 （本次用雷电将军那段：772 个运动采样 → `learned` 动作，14 个微动作之一）
+
+## 学出场背景与视角（chat.100/101）
+
+`scripts/learn-scene.py`：
+
+1. 2fps 抽样，检测**光环**（径向亮度剖面：环带比中心亮多少）挑出"出场那一刻"；
+2. 该帧压暗、轻微模糊、提饱和，存成 `~/.dsh/dsh-dafeiyu/effects/scene/backdrop.jpg`；
+3. 同时估计**地平线位置、主体尺度、推镜倍率**，写进 `scene.json`；
+4. 原生助手放大招时：先铺这张背景板（85% 不透明度 + 暗角），再按 `scale`/`dolly`
+   给宠物加"放大 + 下移 + 推近"的镜头运动（仰视感）。
+
+工具：`motion action=scene video=/path/xx.mp4`（动作学习是 `action=learn`）。

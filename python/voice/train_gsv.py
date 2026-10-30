@@ -77,20 +77,24 @@ def build_list(dataset, out_dir, name, speaker="teacher"):
     return list_path
 
 
-def run_stage(script, env, name):
+def base_env():
+    """子进程公共环境：ffmpeg 进 PATH，仓库根 + GPT_SoVITS 进 PYTHONPATH。"""
     full = dict(os.environ)
-    full.update({key: str(value) for key, value in env.items()})
-    # prepare_datasets 里的脚本按「仓库根目录」运行，但 text/ 包在 GPT_SoVITS 下
-    # GPT-SoVITS 用 ffmpeg-python 调 `ffmpeg` 这个名字，得让它出现在 PATH 里
     ffmpeg = common.find_ffmpeg()
     if ffmpeg and os.path.isfile(ffmpeg):
-        bin_dir = os.path.dirname(ffmpeg)
-        full["PATH"] = bin_dir + os.pathsep + full.get("PATH", "")
-        full["FFMPEG_PATH"] = ffmpeg
+        full["PATH"] = os.path.dirname(ffmpeg) + os.pathsep + full.get("PATH", "")
     parts = [GSV_ROOT, os.path.join(GSV_ROOT, "GPT_SoVITS")]
     if full.get("PYTHONPATH"):
         parts.append(full["PYTHONPATH"])
     full["PYTHONPATH"] = os.pathsep.join(parts)
+    return full
+
+
+def run_stage(script, env, name):
+    full = dict(os.environ)
+    full.update({key: str(value) for key, value in env.items()})
+    # prepare_datasets 里的脚本按「仓库根目录」运行，但 text/ 包在 GPT_SoVITS 下
+    full = base_env()
     print(f"→ {script}", flush=True)
     proc = subprocess.run([sys.executable, "-s", script], cwd=GSV_ROOT, env=full)
     if proc.returncode != 0:
@@ -161,7 +165,7 @@ def s2_config(name, args):
 def cmd_s2(args):
     tmp = s2_config(args.name, args)
     print(f"→ s2_train.py --config {tmp}", flush=True)
-    proc = subprocess.run([sys.executable, "-s", "GPT_SoVITS/s2_train.py", "--config", tmp], cwd=GSV_ROOT)
+    proc = subprocess.run([sys.executable, "-s", "GPT_SoVITS/s2_train.py", "--config", tmp], cwd=GSV_ROOT, env=base_env())
     raise SystemExit(proc.returncode)
 
 

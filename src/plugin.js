@@ -10,6 +10,7 @@ import { createChatHandlers, createChatService } from './chat.js'
 import { createGreeter } from './greeter.js'
 import { createSpeaker } from './speech-v2.js'
 import { createWakeService } from './voice.js'
+import { createCloneVoice } from './voice-tts.js'
 import { apply as registerDenoiseTool, createDenoiseTool, findPython, findFfmpeg } from './denoise.js'
 import { createDenoiseJobs } from './denoise-jobs.js'
 import { createPowerKeeper } from './power.js'
@@ -100,6 +101,12 @@ export const Config = Schema.object({
   wakeEnabled: Schema.boolean().default(false).description('语音唤醒：常驻听麦克风，喊唤醒词就叫醒她（本机识别，不上传录音）'),
   wakeKeyword: Schema.string().default('大肥鱼').description('唤醒词（默认「大肥鱼」，多个用逗号分隔）'),
   wakeReply: Schema.string().default('在呢，我在听').description('被叫醒时说的第一句话'),
+  ttsEngine: Schema.union([
+    Schema.const('say').description('系统语音（快，音色一般）'),
+    Schema.const('clone').description('克隆音色（本机 GPT-SoVITS，慢一点但像原声）'),
+  ]).default('say').description('用哪种方式说话'),
+  ttsRefAudio: Schema.string().default('').description('克隆音色的参考音频（留空 = ~/Documents/大肥鱼声音/ref/teacher.wav）'),
+  ttsPromptText: Schema.string().default('').description('参考音频对应的文本（留空 = 同目录的 teacher.txt）'),
   greetingEnabled: Schema.boolean().default(true).description('长时间没人理时主动打招呼'),
   greetingAfterMinutes: Schema.number().min(1).max(240).step(1).default(12).description('空闲多少分钟后打招呼'),
   greetingRepeatMinutes: Schema.number().min(5).max(240).step(5).default(25).description('两次打招呼的最小间隔'),
@@ -160,6 +167,9 @@ const defaults = Object.freeze({
   wakeEnabled: false,
   wakeKeyword: '大肥鱼',
   wakeReply: '在呢，我在听',
+  ttsEngine: 'say',
+  ttsRefAudio: '',
+  ttsPromptText: '',
   greetingEnabled: true,
   greetingAfterMinutes: 12,
   greetingRepeatMinutes: 25,
@@ -201,6 +211,9 @@ function publicConfig(config = {}) {
     wakeEnabled: config.wakeEnabled === true,
     wakeKeyword: asString(config.wakeKeyword, defaults.wakeKeyword),
     wakeReply: asString(config.wakeReply, defaults.wakeReply),
+    ttsEngine: config.ttsEngine === 'clone' ? 'clone' : 'say',
+    ttsRefAudio: asString(config.ttsRefAudio, ''),
+    ttsPromptText: asString(config.ttsPromptText, ''),
     greetingEnabled: config.greetingEnabled !== false,
     greetingAfterMinutes: Number.isFinite(config.greetingAfterMinutes) ? config.greetingAfterMinutes : defaults.greetingAfterMinutes,
     greetingRepeatMinutes: Number.isFinite(config.greetingRepeatMinutes) ? config.greetingRepeatMinutes : defaults.greetingRepeatMinutes,
@@ -416,6 +429,34 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   }
 
   const speaker = createSpeaker({ logger, applyEnvelope })
+
+  // 克隆音色：参考音频 + 对应文本，默认用整理好的那位老师的一段 6 秒。
+  const refDir = joinPath(homedir(), 'Documents', '大肥鱼声音', 'ref')
+  const readTextFile = (path) => { try { return readFileSyncImpl(path, 'utf8').trim() } catch { return '' } }
+  const cloneVoice = createCloneVoice({
+    logger,
+    refAudio: asString(settings.get()?.ttsRefAudio, '') || joinPath(refDir, 'teacher.wav'),
+    promptText: asString(settings.get()?.ttsPromptText, '') || readTextFile(joinPath(refDir, 'teacher.txt')),
+  })
+  // 统一出口：按设置决定用系统语音还是克隆音色，克隆失败自动回落。
+  const speakText = (text, options = {}) => {
+    const live = settings.get()
+    if (live.voiceEnabled === false) return false
+    if (live.ttsEngine === 'clone') {
+      cloneVoice.speak(text, { speed: Number(live.voiceRate ?? 170) / 170 })
+        .then((ok) => { if (!ok) speaker.speak(text, options) })
+        .catch(() => { try { speaker.speak(text, options) } catch {} })
+      return true
+    }
+    return speaker.speak(text, options)
+  }
+  const syncCloneVoice = () => {
+    const live = settings.get()
+    cloneVoice.configure?.({
+      refAudio: asString(live.ttsRefAudio, '') || joinPath(refDir, 'teacher.wav'),
+      promptText: asString(live.ttsPromptText, '') || readTextFile(joinPath(refDir, 'teacher.txt')),
+    })
+  }
   let powerHeld = false
   const power = createPowerKeeper({
     logger,
@@ -584,7 +625,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
     } catch {}
     try {
       const live = settings.get()
-      speaker.speak(text, {
+      speakText(text, {
         voice: asString(live?.voiceName, 'Tingting'),
         rate: Number(live?.voiceRate ?? 180),
         volume: Number(live?.voiceVolume ?? 0.9),
@@ -847,6 +888,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       balance.configure(next.enabled !== false && next.balanceEnabled, next.balanceSource)
       syncPower()
       syncWake()
+      syncCloneVoice()
       if (next.enabled === false) {
         if (restartTimer) {
           clearTimeout(restartTimer)
@@ -1044,7 +1086,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
               const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
               const text = String(body.text ?? '').slice(0, 500)
               const live = settings.get()
-              const started = speaker.speak(text, {
+              const started = speakText(text, {
                 voice: asString(live?.voiceName, 'Tingting'),
                 rate: Number(live?.voiceRate ?? 180),
                 volume: Number(live?.voiceVolume ?? 0.9),
@@ -1157,7 +1199,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
               const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
               const preset = String(body.voice ?? '')
               const live = settings.get()
-              const started = speaker.speak(String(body.text ?? '大肥鱼现在用的是这个音色，你听听看。'), {
+              const started = speakText(String(body.text ?? '大肥鱼现在用的是这个音色，你听听看。'), {
                 voice: asString(live?.voiceName, 'Tingting'),
                 rate: Number(live?.voiceRate ?? 180),
                 volume: Number(live?.voiceVolume ?? 0.9),
@@ -1521,6 +1563,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
     settings.dispose?.()
     balance.stop()
     wake.stop()
+    cloneVoice.stop()
     greeter.stop()
     power.stop()
     speaker.stop()
@@ -1553,7 +1596,7 @@ export function apply(ctx, config = {}) {
     parameters: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['learn'] },
+        action: { type: 'string', enum: ['learn', 'scene'] },
         video: { type: 'string', description: '视频文件路径' },
         name: { type: 'string', description: '动作名（默认 learned）' },
       },
@@ -1562,12 +1605,13 @@ export function apply(ctx, config = {}) {
     },
     output: { schema: { type: 'object', properties: { ok: { type: 'boolean' }, summary: { type: 'string' } }, additionalProperties: true }, render: (_a, v) => [{ type: 'text', text: v.summary ?? '' }] },
     async execute(args) {
-      if (args.action !== 'learn') throw new Error('只支持 learn')
+      if (!['learn', 'scene'].includes(args.action)) throw new Error('只支持 learn / scene')
       const video = String(args.video ?? '').trim()
       if (!video) throw new Error('缺少 video 路径')
       const name = String(args.name ?? 'learned').replace(/[^\w.-]/g, '') || 'learned'
       const python = (await findPython({ logger })).bin
-      const script = join(dirname(new URL(import.meta.url).pathname), '..', 'scripts', 'learn-motion.py')
+      const scriptName = args.action === 'scene' ? 'learn-scene.py' : 'learn-motion.py'
+      const script = join(dirname(new URL(import.meta.url).pathname), '..', 'scripts', scriptName)
       const ffmpeg = await findFfmpeg({ logger }).catch(() => '')
       const { spawn } = await import('node:child_process')
       const output = await new Promise((resolve, reject) => {
@@ -1580,6 +1624,9 @@ export function apply(ctx, config = {}) {
         child.on('exit', (code) => code === 0 ? resolve(stdout) : reject(new Error(stderr.slice(-500) || `退出码 ${code}`)))
       })
       const result = JSON.parse(output.trim().split('\n').pop())
+      if (args.action === 'scene') {
+        return { ok: true, ...result, summary: `已学会出场背景与视角：地平线 ${result.horizon}、主体尺度 ${result.scale}、推镜 ${result.dolly}` }
+      }
       return { ok: true, ...result, summary: `已学会动作「${result.clip}」：${result.frames} 帧（采样 ${result.samples} 个运动点）` }
     },
   }

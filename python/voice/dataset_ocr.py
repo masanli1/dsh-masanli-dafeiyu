@@ -76,11 +76,16 @@ def frame_at(video, ffmpeg, when, path):
     return os.path.isfile(path)
 
 
-def run_ocr_batch(ocr, images, langs):
-    """一次进程 OCR 一批图，返回 {图片路径: [行...]}。"""
+def run_ocr_batch(ocr, images, langs, timeout=180):
+    """一次进程 OCR 一批图，返回 {图片路径: [行...]}。卡住就放弃这批。"""
     if not images:
         return {}
-    proc = subprocess.run([ocr, "--langs", langs, *images], capture_output=True, text=True, errors="ignore")
+    try:
+        proc = subprocess.run([ocr, "--langs", langs, *images], capture_output=True,
+                              text=True, errors="ignore", timeout=timeout)
+    except subprocess.TimeoutExpired:
+        common.emit({"ok": False, "event": "ocr-timeout", "images": len(images)})
+        return {}
     rows = {}
     for line in proc.stdout.splitlines():
         parts = line.split("\t", 3)
@@ -227,6 +232,11 @@ def cmd_build(args):
                     done.add(json.loads(line)["video"])
                 except Exception:
                     pass
+    # 没切出片段的视频也要记住，否则每次都会从头再 OCR 一遍
+    seen_path = os.path.join(out, "seen.txt")
+    if os.path.isfile(seen_path):
+        with open(seen_path, encoding="utf-8") as handle:
+            done.update(line.strip() for line in handle if line.strip())
 
     kept = 0
     seconds = 0.0
