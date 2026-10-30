@@ -502,6 +502,17 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   try { startDenoiseWatch() } catch (error) { logger.warn?.(`dsh-dafeiyu 降噪监视器启动失败: ${error?.message ?? error}`) }
 
   let activeTurns = 0
+  let lastSentTurns = -1
+  const turnTimer = setInterval(() => {
+    try {
+      if (activeTurns === lastSentTurns) return
+      lastSentTurns = activeTurns
+      bridge?.send(createMessage(CompanionMessageKind.TASKS, {
+        tasks: Array.from({ length: activeTurns }, (_, index) => ({ title: `任务 ${index + 1}`, state: 'WORKING' })),
+      }))
+    } catch {}
+  }, 5000)
+  if (typeof turnTimer.unref === 'function') turnTimer.unref()
   const greeter = createGreeter({
     config: () => settings.get(),
     speak: (text, options) => {
@@ -707,7 +718,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   // session bus: a throw here could stop every other subscriber from seeing
   // the event, which would look exactly like "installing the pet broke other
   // plugins".
-  const eventStats = { total: 0, userMessage: 0, lastType: '', lastError: '' }
+  const eventStats = { total: 0, userMessage: 0, turns: 0, lastType: '', lastError: '' }
   const offEvent = eventCtx.on('session/event', (session, event) => {
     eventStats.total += 1
     eventStats.lastType = event?.type ?? ''
@@ -731,7 +742,8 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
         }
       } catch {}
     }
-    if (event?.type === 'turn/start') { activeTurns += 1; syncPower() }
+    eventStats.lastType = event?.type ?? ''
+    if (event?.type === 'turn/start') { activeTurns += 1; eventStats.turns += 1; syncPower() }
     if (event?.type === 'turn/end') { activeTurns = Math.max(0, activeTurns - 1); syncPower() }
     if (event?.type !== 'turn/end') greeter.noteActivity()
     if (!bridge || !reducer) return
@@ -821,6 +833,17 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({ kind: 'exact', path: CHAT_TARGET_ENDPOINT, handler: chatHandlers.target }),
         'dsh-dafeiyu: local chat target endpoint',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/debug/tasks',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            jsonResponse(res, 200, { activeTurns, lastSentTurns, ...eventStats })
+          },
+        }),
+        'dsh-dafeiyu: debug tasks',
       )
       httpCtx.effect(
         () => httpCtx.webServer.register({

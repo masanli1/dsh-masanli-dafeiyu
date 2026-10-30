@@ -1,6 +1,6 @@
 {
   "name": "dsh-dafeiyu",
-  "version": "0.1.19-chat.89",
+  "version": "0.1.19-chat.91",
   "description": "大肥鱼伴侣 + 内置 NPSS 降噪：桌面宠物、页内聊天、本机语音、待机动作与 denoise_audio 工具",
   "author": "QCYTSN",
   "type": "module",

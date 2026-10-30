@@ -958,3 +958,9 @@ Lv.4 不再只是光晕，而是一整套「劈刀」演出（每帧程序化绘
   `~/.dsh/dsh-dafeiyu/effects/ultimate/`（**不随仓库发布**，仅本机可用）；
 - 终极技时以 screen 混合叠在她的宠物区域上方，叠两遍增强亮度；
 - 没有这些帧时自动回退到程序化魔法阵演出。
+
+## 任务计数修正（chat.90/91）
+
+- 任务行的数字现在来自**真实的 turn/start – turn/end 计数**（Host 每 5 秒比对一次，有变化就推给原生助手）；
+- 降噪进度不再占用「任务 N」，而是显示在详情行（`DSH · 降噪 120/121`）；
+- 调试：`GET /plugins/dsh-dafeiyu/debug/tasks` 返回 `activeTurns / lastSentTurns / turns`。

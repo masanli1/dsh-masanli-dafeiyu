@@ -361,6 +361,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var lastBalanceText = ""
     var lastTasksText = ""
     var lastKnownRemaining: Int? = nil
+    var denoiseProgress = ""
     var hunger: Double = 0
     var evoLevel: Int = 0
     var evoStage: String = "初生"
@@ -661,6 +662,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ]
         ("🍚 喂食" as NSString).draw(at: NSPoint(x: feedRect.minX + 10, y: feedRect.minY + 5), withAttributes: feedAttrs)
 
+        if lastTasksText.isEmpty { lastTasksText = "空闲" }
         if !lastTasksText.isEmpty {
             let rightAttrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 11.5),
@@ -950,12 +952,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             remaining += 1
         }
         let total = done.count + skipped.count + remaining
-        lastTasksText = remaining > 0 ? "任务 \(remaining)" : "空闲"
+        denoiseProgress = remaining > 0 ? "降噪 \(total - remaining)/\(total)" : ""
         if remaining > 0 {
             lastStateText = "降噪 \(total - remaining)/\(total)"
         } else if lastKnownRemaining ?? 0 > 0 {
             lastStateText = "降噪完成"
-            lastTasksText = "空闲"
             celebrateMusic()
         }
         lastKnownRemaining = remaining
@@ -1016,7 +1017,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func statusDetail() -> String {
-        lastStateText.isEmpty ? "DSH · 等待下一次任务" : "DSH · " + lastStateText
+        if !denoiseProgress.isEmpty { return "DSH · " + denoiseProgress }
+        return lastStateText.isEmpty ? "DSH · 等待下一次任务" : "DSH · " + lastStateText
     }
 
     func openChat() {
