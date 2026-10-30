@@ -620,9 +620,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         petView.needsDisplay = true
     }
 
-    // 外观进化：Lv.1 光晕，Lv.2 星点，Lv.3 头顶光环，Lv.4 金色柔光
+    // 外观进化：Lv.1 光晕，Lv.2 星点，Lv.3 头顶光环，Lv.4 传说（紫电 + 劈刀）
     func drawEvolution(in bounds: NSRect) {
         guard evoLevel > 0 else { return }
+        if evoLevel >= 4 { drawLegendary(in: bounds); return }
         let center = NSPoint(x: bounds.midX, y: bounds.height * 0.42)
         let baseRadius = bounds.height * 0.30
         let glow = NSBezierPath(ovalIn: NSRect(x: center.x - baseRadius, y: center.y - baseRadius * 0.8,
@@ -654,6 +655,91 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ring.lineWidth = 2.5
             NSColor(calibratedRed: 1.0, green: 0.85, blue: 0.4, alpha: 0.85).setStroke()
             ring.stroke()
+        }
+    }
+
+
+    // 传说形态：紫电背景 + 斜向劈刀 + 碎片，每 3 秒来一次强闪
+    func drawLegendary(in bounds: NSRect) {
+        let now = Date().timeIntervalSinceReferenceDate
+        let flash = max(0, sin(now * 2.1))            // 0..1 呼吸式闪光
+        let burst = pow(max(0, sin(now * 0.9)), 6)     // 每 ~3.5 秒一次强劈
+
+        // 0) 暗紫底幕，让光效更醒（只在她周围一圈）
+        let auraRect = NSRect(x: bounds.midX - bounds.width * 0.40, y: bounds.height * 0.02,
+                              width: bounds.width * 0.80, height: bounds.height * 0.72)
+        let aura = NSBezierPath(ovalIn: auraRect)
+        NSColor(calibratedRed: 0.10, green: 0.05, blue: 0.22, alpha: 0.62 + 0.10 * flash).setFill()
+        aura.fill()
+
+        // 1) 深紫径向底光
+        if let gradient = NSGradient(colors: [
+            NSColor(calibratedRed: 0.45, green: 0.25, blue: 0.95, alpha: 0.30 + 0.12 * flash),
+            NSColor(calibratedRed: 0.20, green: 0.10, blue: 0.45, alpha: 0.10),
+            NSColor(calibratedWhite: 0, alpha: 0),
+        ] as [NSColor]) {
+            let center = NSPoint(x: bounds.midX, y: bounds.height * 0.45)
+            let radius = bounds.height * 0.55
+            gradient.draw(fromCenter: center, radius: 0, toCenter: center, radius: radius, options: [])
+        }
+
+        // 2) 斜向刀光：从右下到左上的一道光刃
+        let bladeStart = NSPoint(x: bounds.midX - bounds.width * 0.62, y: bounds.height * 0.05)
+        let bladeEnd = NSPoint(x: bounds.midX + bounds.width * 0.62, y: bounds.height * 0.92)
+        let blade = NSBezierPath()
+        blade.move(to: bladeStart)
+        blade.line(to: bladeEnd)
+        blade.lineWidth = 10 + 22 * burst
+        NSColor(calibratedRed: 0.75, green: 0.55, blue: 1.0, alpha: 0.55 + 0.35 * burst).setStroke()
+        blade.stroke()
+        let core = NSBezierPath()
+        core.move(to: bladeStart)
+        core.line(to: bladeEnd)
+        core.lineWidth = 3 + 7 * burst
+        NSColor(calibratedWhite: 1, alpha: 0.75 + 0.25 * burst).setStroke()
+        core.stroke()
+
+        // 2.5) 劈砍弧光
+        let arc = NSBezierPath()
+        arc.appendArc(withCenter: NSPoint(x: bounds.midX + bounds.width * 0.10, y: bounds.height * 0.42),
+                      radius: bounds.width * 0.52, startAngle: 118, endAngle: 236, clockwise: false)
+        arc.lineWidth = 5 + 16 * burst
+        NSColor(calibratedRed: 0.85, green: 0.70, blue: 1.0, alpha: 0.35 + 0.45 * burst).setStroke()
+        arc.stroke()
+
+        // 3) 紫色闪电（每帧重新抖动）
+        var seed = UInt64(now * 12) &* 6364136223846793005 &+ 1442695040888963407
+        for _ in 0..<3 {
+            let path = NSBezierPath()
+            var point = NSPoint(x: CGFloat.random(in: bounds.minX...bounds.maxX), y: bounds.maxY)
+            path.move(to: point)
+            for _ in 0..<6 {
+                seed = seed &* 6364136223846793005 &+ 1442695040888963407
+                let dx = CGFloat(Int(seed >> 33) % 46) - 23
+                let dy = -CGFloat(Int(seed >> 17) % 40) - 18
+                point = NSPoint(x: point.x + dx, y: point.y + dy)
+                path.line(to: point)
+            }
+            path.lineWidth = 1.4
+            NSColor(calibratedRed: 0.85, green: 0.7, blue: 1.0, alpha: 0.5 + 0.4 * flash).setStroke()
+            path.stroke()
+        }
+
+        // 4) 环绕碎片
+        for index in 0..<8 {
+            let angle = now * 0.9 + Double(index) * (2 * Double.pi / 8)
+            let radius = bounds.height * (0.28 + 0.05 * sin(now * 1.3 + Double(index)))
+            let x = bounds.midX + CGFloat(cos(angle)) * radius
+            let y = bounds.height * 0.45 + CGFloat(sin(angle)) * radius * 0.75
+            let shard = NSBezierPath()
+            let size: CGFloat = 4 + CGFloat(index % 3)
+            shard.move(to: NSPoint(x: x, y: y + size))
+            shard.line(to: NSPoint(x: x + size * 0.6, y: y))
+            shard.line(to: NSPoint(x: x, y: y - size))
+            shard.line(to: NSPoint(x: x - size * 0.6, y: y))
+            shard.close()
+            NSColor(calibratedRed: 0.75, green: 0.6, blue: 1.0, alpha: 0.35 + 0.35 * flash).setFill()
+            shard.fill()
         }
     }
 
