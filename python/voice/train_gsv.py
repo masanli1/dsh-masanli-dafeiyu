@@ -81,8 +81,16 @@ def run_stage(script, env, name):
     full = dict(os.environ)
     full.update({key: str(value) for key, value in env.items()})
     # prepare_datasets 里的脚本按「仓库根目录」运行，但 text/ 包在 GPT_SoVITS 下
-    python_path = os.path.join(GSV_ROOT, "GPT_SoVITS")
-    full["PYTHONPATH"] = python_path + (os.pathsep + full["PYTHONPATH"] if full.get("PYTHONPATH") else "")
+    # GPT-SoVITS 用 ffmpeg-python 调 `ffmpeg` 这个名字，得让它出现在 PATH 里
+    ffmpeg = common.find_ffmpeg()
+    if ffmpeg and os.path.isfile(ffmpeg):
+        bin_dir = os.path.dirname(ffmpeg)
+        full["PATH"] = bin_dir + os.pathsep + full.get("PATH", "")
+        full["FFMPEG_PATH"] = ffmpeg
+    parts = [GSV_ROOT, os.path.join(GSV_ROOT, "GPT_SoVITS")]
+    if full.get("PYTHONPATH"):
+        parts.append(full["PYTHONPATH"])
+    full["PYTHONPATH"] = os.pathsep.join(parts)
     print(f"→ {script}", flush=True)
     proc = subprocess.run([sys.executable, "-s", script], cwd=GSV_ROOT, env=full)
     if proc.returncode != 0:

@@ -1546,6 +1546,48 @@ export function apply(ctx, config = {}) {
   })
   const director = createDirector({ ctx, policy: orderPolicy, logger })
   try { registerDirectorTool(ctx, { director, logger }) } catch (error) { logger.error?.(`调度台工具挂载失败: ${error?.message ?? error}`) }
+  // 动作学习：从视频里学"小动作"，生成新的动作帧（scripts/learn-motion.py）
+  const motionTool = {
+    name: 'motion',
+    description: '从视频里学习小动作并生成宠物动作：action=learn 需要 video 路径和可选 name。',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['learn'] },
+        video: { type: 'string', description: '视频文件路径' },
+        name: { type: 'string', description: '动作名（默认 learned）' },
+      },
+      required: ['action'],
+      additionalProperties: false,
+    },
+    output: { schema: { type: 'object', properties: { ok: { type: 'boolean' }, summary: { type: 'string' } }, additionalProperties: true }, render: (_a, v) => [{ type: 'text', text: v.summary ?? '' }] },
+    async execute(args) {
+      if (args.action !== 'learn') throw new Error('只支持 learn')
+      const video = String(args.video ?? '').trim()
+      if (!video) throw new Error('缺少 video 路径')
+      const name = String(args.name ?? 'learned').replace(/[^\w.-]/g, '') || 'learned'
+      const python = (await findPython({ logger })).bin
+      const script = join(dirname(new URL(import.meta.url).pathname), '..', 'scripts', 'learn-motion.py')
+      const ffmpeg = await findFfmpeg({ logger }).catch(() => '')
+      const { spawn } = await import('node:child_process')
+      const output = await new Promise((resolve, reject) => {
+        const child = spawn(python, [script, video, name], { env: { ...process.env, DFY_FFMPEG: ffmpeg || process.env.DFY_FFMPEG || '' } })
+        let stdout = ''
+        let stderr = ''
+        child.stdout.on('data', (chunk) => { stdout += chunk })
+        child.stderr.on('data', (chunk) => { stderr += chunk })
+        child.on('error', reject)
+        child.on('exit', (code) => code === 0 ? resolve(stdout) : reject(new Error(stderr.slice(-500) || `退出码 ${code}`)))
+      })
+      const result = JSON.parse(output.trim().split('\n').pop())
+      return { ok: true, ...result, summary: `已学会动作「${result.clip}」：${result.frames} 帧（采样 ${result.samples} 个运动点）` }
+    },
+  }
+  const registerMotion = (target) => {
+    try { target.tools?.register(motionTool); logger.info?.('dsh-dafeiyu: motion 工具已注册') } catch (error) { logger.error?.(`movie 工具挂载失败: ${error?.message ?? error}`) }
+  }
+  if (typeof ctx.inject === 'function') ctx.inject(['tools'], registerMotion)
+  else registerMotion(ctx)
   const selfTool = createSelfTool({ logger })
   try { registerSelfTool(ctx, { selfTool, logger }) } catch (error) { logger.error?.(`复刻工具挂载失败: ${error?.message ?? error}`) }
   const notifier = createNotifier({ webhooks: Array.isArray(config.notifyWebhooks) ? config.notifyWebhooks : [], logger })

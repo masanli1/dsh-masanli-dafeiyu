@@ -1014,3 +1014,16 @@ Lv.4 不再只是光晕，而是一整套「劈刀」演出（每帧程序化绘
   过滤掉 `Time sampled…` / `Current runtime context…` / `<dfy-context>` 这类系统注入；
 - 使用：工具 `selftool` 的 `learn` / `ask` / `stats`，或 `GET /plugins/dsh-dafeiyu/debug/selftool`；
 - 命中时可以直接返回复刻答案（不调模型），命中率会统计在 `hitRate`。
+
+## 从视频里学小动作（chat.99）
+
+`scripts/learn-motion.py`：
+
+1. 用 ffmpeg 抽 10fps 灰度帧（96 宽）；
+2. 逐帧差分 → 每帧的**运动能量、运动质心 (cx,cy)、运动占比**；
+3. 三条曲线归一化到 0–1；
+4. 把曲线映射到宠物待机帧：位移（x ±17px、y ±10px）、旋转（±3°）、缩放（+4%）；
+5. 生成 48 帧、80ms 的新动作，写进 `assets/pet/<name>` 并加入 `idleMicroClips`。
+
+工具：`motion action=learn video=/path/xx.mp4 name=raiden`
+（本次用雷电将军那段：772 个运动采样 → `learned` 动作，14 个微动作之一）
