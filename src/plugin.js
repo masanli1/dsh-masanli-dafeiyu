@@ -20,6 +20,7 @@ import { registerBilibiliTool } from './bilibili.js'
 import { createRoutineStore, registerRoutineTool } from './routine.js'
 import { createEnglishStore, registerEnglishTool } from './english.js'
 import { createEvolutionStore, registerEvolutionTool } from './evolution.js'
+import { createNotifier, registerNotifyTool } from './notify.js'
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { existsSync as fileExists, readFileSync as readFileSyncImpl, readdirSync as readdirSyncImpl } from 'node:fs'
@@ -98,6 +99,15 @@ export const Config = Schema.object({
   preventSleep: Schema.boolean().default(true).description('DSH 有任务在跑时阻止电脑空闲休眠（macOS caffeinate）'),
   preventSleepDisplay: Schema.boolean().default(false).description('连屏幕也保持常亮（默认只防系统休眠）'),
   novelRoot: Schema.string().default('').description('小说项目根目录（留空 = ~/Documents/大肥鱼小说）'),
+  notifyWebhooks: Schema.array(Schema.object({
+    name: Schema.string().default('wecom'),
+    kind: Schema.union([
+      Schema.const('wecom'), Schema.const('feishu'), Schema.const('dingtalk'), Schema.const('slack'),
+      Schema.const('serverchan'), Schema.const('pushplus'), Schema.const('bark'), Schema.const('custom'),
+    ]).default('wecom'),
+    url: Schema.string().default('').description('webhook 或推送地址'),
+    token: Schema.string().default('').description('PushPlus 的 token（其他类型可留空）'),
+  })).default([]).description('消息推送 webhook：企业微信/飞书/钉钉/Slack 群机器人地址'),
   denoiseWatchEnabled: Schema.boolean().default(true).description('盯着 NAS 降噪批处理，把进度显示到状态卡上'),
   denoiseWatchDir: Schema.string().default('/Volumes/15226550291/课程').description('降噪批处理所在目录'),
   musicOnDone: Schema.boolean().default(true).description('降噪批处理全部完成后自动放一首音乐'),
@@ -1354,6 +1364,8 @@ export function apply(ctx, config = {}) {
   const routine = createRoutineStore({ logger })
   const english = createEnglishStore({ logger })
   const evolution = createEvolutionStore({ logger })
+  const notifier = createNotifier({ webhooks: Array.isArray(config.notifyWebhooks) ? config.notifyWebhooks : [], logger })
+  try { registerNotifyTool(ctx, { notifier, logger }) } catch (error) { logger.error?.(`推送工具挂载失败: ${error?.message ?? error}`) }
   try {
     const result = evolution.addXp(10)
     if (result.evolved) logger.info?.(`dsh-dafeiyu 进化：${result.before.name} → ${result.after.name}`)
