@@ -1004,3 +1004,13 @@ Lv.4 不再只是光晕，而是一整套「劈刀」演出（每帧程序化绘
 - 自动模式：每 `directorIntervalMinutes`（默认 45 分钟）一次，只有在她空闲（没有进行中的 turn）时才出令；
 - 记录：`~/.dsh/dsh-dafeiyu-director-policy.json`（Q 表）与 `dsh-dafeiyu-director.json`（历史）；
 - 查看：`GET /plugins/dsh-dafeiyu/debug/director`，或工具 `director action=status`；手动跑一单：`POST /plugins/dsh-dafeiyu/director/run`。
+
+## 自我复刻工具（chat.97/98）
+
+把"合适的问题 → 好答案"沉淀成可检索技能（`src/selftool.js`）：
+
+- 相似度：字符 1–2 gram 加权余弦，阈值 0.42（近义改写能命中，无关问题不命中）；
+- 学习路径：`chat.send` 的 `onUserMessage` 钩子记下问题，`assistant/message` 事件配对答案；
+  过滤掉 `Time sampled…` / `Current runtime context…` / `<dfy-context>` 这类系统注入；
+- 使用：工具 `selftool` 的 `learn` / `ask` / `stats`，或 `GET /plugins/dsh-dafeiyu/debug/selftool`；
+- 命中时可以直接返回复刻答案（不调模型），命中率会统计在 `hitRate`。

@@ -70,7 +70,7 @@ export const PET_WORKSPACE = join(homedir(), 'Documents', '大肥鱼聊天')
 
 import { rememberFacts } from './memory-auto.js'
 
-export function createChatService({ ctx, logger = console, config = () => ({}), storePath = CHAT_STORE, memory, mood, emote, policy } = {}) {
+export function createChatService({ ctx, logger = console, config = () => ({}), storePath = CHAT_STORE, memory, mood, emote, policy, onUserMessage } = {}) {
   const sessions = new Map()
   let targetId
   let manualTarget = ''
@@ -320,6 +320,11 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
     '如果有长期记忆（名字、喜好、发生过的日期事件），自然地提一嘴，像熟人聊天那样，不要生硬复述。',
   ].join('')
 
+  // 给上层一个钩子：记住"用户问了什么"，用于自我复刻学习
+  const rememberUser = (value) => {
+    try { onUserMessage?.(value) } catch {}
+  }
+
   const buildContext = async (message = '', styleHint = '') => {
     try {
       if (config()?.contextInjection === false) return ''
@@ -375,6 +380,7 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
         if (result.added.length) logger.info?.(`dsh-dafeiyu 自动记忆: ${result.added.map((f) => f.key + '=' + f.value).join('、')}`)
       }
     } catch {}
+    rememberUser(value)
     // 强化学习：先用上一条消息的情绪给上一轮的选择打分，再按当前上下文选这轮的风格
     let styleHint = ''
     try {

@@ -24,6 +24,7 @@ import { createEvolutionStore, registerEvolutionTool } from './evolution.js'
 import { createNotifier, registerNotifyTool } from './notify.js'
 import { createPolicy, registerRlTool } from './rl.js'
 import { createDirector, registerDirectorTool, ORDERS } from './director.js'
+import { createSelfTool, registerSelfTool } from './selftool.js'
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { existsSync as fileExists, readFileSync as readFileSyncImpl, readdirSync as readdirSyncImpl } from 'node:fs'
@@ -388,7 +389,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   if (typeof moodTimer.unref === 'function') moodTimer.unref()
   const PRAISE = /(可爱|好乖|真棒|厉害|喜欢你|好看|漂亮|聪明|谢谢大肥鱼|辛苦了)/
   const FEED = /(吃饭|喂你|给你吃|零食|喝点)/
-  const chat = createChatService({ ctx, logger, config: () => settings.get(), memory: config.memoryStore, mood, emote: config.emote, policy: config.policy })
+  const chat = createChatService({ ctx, logger, config: () => settings.get(), memory: config.memoryStore, mood, emote: config.emote, policy: config.policy, onUserMessage: config.onUserMessage })
   const chatHandlers = createChatHandlers(chat, logger)
   const ffmpegCandidates = () => [
     process.env.DF_FACTORY_FFMPEG,
@@ -520,6 +521,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   try { startDenoiseWatch() } catch (error) { logger.warn?.(`dsh-dafeiyu 降噪监视器启动失败: ${error?.message ?? error}`) }
 
   let activeTurns = 0
+  let lastUserText = ''
   let lastSentTurns = -1
   const turnTimer = setInterval(() => {
     try {
@@ -784,7 +786,6 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   const eventStats = { total: 0, userMessage: 0, turns: 0, lastType: '', lastError: '' }
   const offEvent = eventCtx.on('session/event', (session, event) => {
     eventStats.total += 1
-    eventStats.lastType = event?.type ?? ''
     if (event?.type === 'user/message') eventStats.userMessage += 1
     chat.note(session, event)
     if (event?.type === 'user/message') {
@@ -806,6 +807,14 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       } catch {}
     }
     eventStats.lastType = event?.type ?? ''
+    try {
+      if (event?.type === 'assistant/message' && lastUserText) {
+        const text = event?.data?.message?.content?.filter?.((part) => part.type === 'text')?.map((part) => part.text).join('') ?? ''
+        const cleanQuestion = !/^(Time sampled|Current runtime context|<dfy-context>)/.test(lastUserText)
+        if (cleanQuestion && text.length > 8 && text.length < 800) config.selfTool?.learn?.(lastUserText, text)
+        lastUserText = ''
+      }
+    } catch {}
     if (event?.type === 'turn/start') { activeTurns += 1; eventStats.turns += 1; syncPower() }
     if (event?.type === 'turn/end') { activeTurns = Math.max(0, activeTurns - 1); syncPower() }
     if (event?.type !== 'turn/end') greeter.noteActivity()
@@ -897,6 +906,17 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({ kind: 'exact', path: CHAT_TARGET_ENDPOINT, handler: chatHandlers.target }),
         'dsh-dafeiyu: local chat target endpoint',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/debug/selftool',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            try { jsonResponse(res, 200, config.selfTool?.stats?.() ?? {}) } catch (error) { jsonResponse(res, 500, { error: String(error?.message ?? error) }) }
+          },
+        }),
+        'dsh-dafeiyu: selftool debug',
       )
       httpCtx.effect(
         () => httpCtx.webServer.register({
@@ -1526,6 +1546,8 @@ export function apply(ctx, config = {}) {
   })
   const director = createDirector({ ctx, policy: orderPolicy, logger })
   try { registerDirectorTool(ctx, { director, logger }) } catch (error) { logger.error?.(`调度台工具挂载失败: ${error?.message ?? error}`) }
+  const selfTool = createSelfTool({ logger })
+  try { registerSelfTool(ctx, { selfTool, logger }) } catch (error) { logger.error?.(`复刻工具挂载失败: ${error?.message ?? error}`) }
   const notifier = createNotifier({ webhooks: Array.isArray(config.notifyWebhooks) ? config.notifyWebhooks : [], logger })
   try { registerNotifyTool(ctx, { notifier, logger }) } catch (error) { logger.error?.(`推送工具挂载失败: ${error?.message ?? error}`) }
   try {
@@ -1541,6 +1563,7 @@ export function apply(ctx, config = {}) {
     memoryStore: memory,
     policy,
     director,
+    selfTool,
     routine,
     english,
     evolution,
