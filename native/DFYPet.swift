@@ -514,9 +514,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         microTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { _ in
             guard self.currentClip == "idle", self.clips.count > 0 else { return }
             var name = self.microClips.randomElement() ?? "idle"
-            if self.evoLevel >= 4, self.clips["slash"] != nil, Double.random(in: 0...1) < 0.55 {
+            let roll = Double.random(in: 0...1)
+            if self.evoLevel >= 4, self.clips["ultimate"] != nil, roll < 0.18 {
+                name = "ultimate"
+            } else if self.evoLevel >= 4, self.clips["slash"] != nil, roll < 0.55 {
                 name = "slash"
-            } else if self.hunger > 0.6, self.clips["eat_rice"] != nil, Double.random(in: 0...1) < 0.65 {
+            } else if self.hunger > 0.6, self.clips["eat_rice"] != nil, roll < 0.75 {
                 name = "eat_rice"
             }
             self.oneShotClip = name
