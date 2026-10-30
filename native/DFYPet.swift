@@ -382,6 +382,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var sceneParams: [String: Any] = [:]
     var cameraScale: CGFloat = 1
     var cameraOffsetY: CGFloat = 0
+    var previewQueue: [String] = []
+    var previewSeconds: Double = 1.6
+    var previewAt: Date = Date.distantPast
     var voiceName = "Tingting"
     var voiceRate = 170
     var feedButtonRect: NSRect = .zero
@@ -533,6 +536,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if bubbleVisible && Date() > bubbleUntil { bubbleVisible = false }
         if cardVisible && Date() > cardHideAt { cardVisible = false }
+        if !previewQueue.isEmpty, Date().timeIntervalSince(previewAt) >= previewSeconds {
+            previewAt = Date()
+            advancePreview()
+        }
         petView.needsDisplay = true
     }
 
@@ -1029,6 +1036,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showBubble(line, seconds: 3)
     }
 
+    func startPreview(seconds: Double) {
+        previewSeconds = max(0.6, seconds)
+        previewQueue = clips.keys.sorted()
+        previewAt = Date()
+        advancePreview()
+    }
+
+    func advancePreview() {
+        guard !previewQueue.isEmpty else { return }
+        let name = previewQueue.removeFirst()
+        if clips[name] != nil {
+            currentClip = name
+            frameIndex = 0
+            lastFrameAt = Date()
+            oneShotClip = nil
+            showBubble(name, seconds: previewSeconds * 0.9)
+        }
+    }
+
     func feed() {
         post("/plugins/dsh-dafeiyu/mood", ["action": "feed"])
         playReaction("eat_rice")
@@ -1145,6 +1171,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 showCard()
                 chatWindow?.updateStatus(state: nil, balance: lastBalanceText, tasks: nil)
             }
+        case "preview":
+            let seconds = (message["seconds"] as? Double) ?? 1.6
+            startPreview(seconds: seconds)
         case "emote":
             if let clip = message["clip"] as? String { playReaction(clip) }
         case "ping":
