@@ -32,8 +32,8 @@ const hourBucket = (date = new Date()) => {
   return 'evening'
 }
 
-export function createPolicy({ path = RL_PATH, epsilon = 0.25, logger = console } = {}) {
-  let data = { q: {}, counts: {}, plays: 0, epsilon }
+export function createPolicy({ path = RL_PATH, epsilon = 0.25, logger = console, actions = ACTIONS, hints = STYLE_HINT } = {}) {
+  let data = { q: {}, counts: {}, plays: 0, epsilon, actions, hints }
   try { data = { ...data, ...JSON.parse(readFileSync(path, 'utf8')) } } catch {}
 
   const save = () => {
@@ -48,10 +48,10 @@ export function createPolicy({ path = RL_PATH, epsilon = 0.25, logger = console 
   const choose = (context) => {
     data.plays += 1
     const eps = Math.max(0.05, data.epsilon * Math.pow(0.995, data.plays))
-    if (Math.random() < eps) return { action: ACTIONS[Math.floor(Math.random() * ACTIONS.length)], explored: true, epsilon: eps }
-    let best = ACTIONS[0]
+    if (Math.random() < eps) return { action: actions[Math.floor(Math.random() * actions.length)], explored: true, epsilon: eps }
+    let best = actions[0]
     let bestValue = -Infinity
-    for (const action of ACTIONS) {
+    for (const action of actions) {
       const value = data.q[keyOf(context, action)] ?? 0
       if (value > bestValue) { bestValue = value; best = action }
     }

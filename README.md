@@ -987,3 +987,20 @@ Lv.4 不再只是光晕，而是一整套「劈刀」演出（每帧程序化绘
 | 探索 | ε = 0.25 × 0.995^轮数，最低 0.05（先探索后利用） |
 | 持久化 | `~/.dsh/dsh-dafeiyu-rl.json` |
 | 查看 | 工具 `rl`，或 `GET /plugins/dsh-dafeiyu/debug/rl` |
+
+## 三层闭环：想法 → 指令 → 执行（chat.94/95）
+
+```
+上层  强化学习策略（ordert 老虎机）挑一条指令
+  ↓   controller.prompt（mode: queue）
+中层  DSH 会话执行（独立会话「大肥鱼调度台」）
+  ↓   turn/end + assistant/message
+下层  结果回传：成功 +1 / 失败(blocked、timeout) −1
+  ↑   更新 Q，下一次更倾向成功率高的指令
+```
+
+- 指令目录（`src/director.js` 的 `ORDERS`）：巡检任务、总结今天、今日单词、作息建议、整理记忆、主动搭话；
+- 上下文：`时段|触发方式`（manual/http/auto/tool）；
+- 自动模式：每 `directorIntervalMinutes`（默认 45 分钟）一次，只有在她空闲（没有进行中的 turn）时才出令；
+- 记录：`~/.dsh/dsh-dafeiyu-director-policy.json`（Q 表）与 `dsh-dafeiyu-director.json`（历史）；
+- 查看：`GET /plugins/dsh-dafeiyu/debug/director`，或工具 `director action=status`；手动跑一单：`POST /plugins/dsh-dafeiyu/director/run`。

@@ -26,7 +26,7 @@ sys.path.insert(0, HERE)
 
 import common  # noqa: E402
 
-SR = 16000
+SR = 32000  # TTS 训练要 32k；16k 会把高频砍掉
 VIDEO_EXT = {".mov", ".mp4", ".mkv"}
 
 CJK = re.compile(r"[\u4e00-\u9fff]")

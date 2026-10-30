@@ -23,6 +23,7 @@ import { createEnglishStore, registerEnglishTool } from './english.js'
 import { createEvolutionStore, registerEvolutionTool } from './evolution.js'
 import { createNotifier, registerNotifyTool } from './notify.js'
 import { createPolicy, registerRlTool } from './rl.js'
+import { createDirector, registerDirectorTool, ORDERS } from './director.js'
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { existsSync as fileExists, readFileSync as readFileSyncImpl, readdirSync as readdirSyncImpl } from 'node:fs'
@@ -104,6 +105,8 @@ export const Config = Schema.object({
   preventSleep: Schema.boolean().default(true).description('DSH 有任务在跑时阻止电脑空闲休眠（macOS caffeinate）'),
   preventSleepDisplay: Schema.boolean().default(false).description('连屏幕也保持常亮（默认只防系统休眠）'),
   novelRoot: Schema.string().default('').description('小说项目根目录（留空 = ~/Documents/大肥鱼小说）'),
+  directorEnabled: Schema.boolean().default(true).description('开启三层调度：上层定时挑一条指令交给 DSH 执行并评估'),
+  directorIntervalMinutes: Schema.number().min(5).max(720).step(5).default(45).description('两次自动调度之间的间隔（分钟）'),
   notifyWebhooks: Schema.array(Schema.object({
     name: Schema.string().default('wecom'),
     kind: Schema.union([
@@ -113,6 +116,8 @@ export const Config = Schema.object({
     url: Schema.string().default('').description('webhook 或推送地址'),
     token: Schema.string().default('').description('PushPlus 的 token（其他类型可留空）'),
   })).default([]).description('消息推送 webhook：企业微信/飞书/钉钉/Slack 群机器人地址'),
+  directorEnabled: true,
+  directorIntervalMinutes: 45,
   denoiseWatchEnabled: Schema.boolean().default(true).description('盯着 NAS 降噪批处理，把进度显示到状态卡上'),
   denoiseWatchDir: Schema.string().default('/Volumes/15226550291/课程').description('降噪批处理所在目录'),
   musicOnDone: Schema.boolean().default(true).description('降噪批处理全部完成后自动放一首音乐'),
@@ -203,6 +208,8 @@ function publicConfig(config = {}) {
     novelRoot: asString(config.novelRoot, ''),
     chatMode: config.chatMode === 'current' ? 'current' : 'dedicated',
     memoryEnabled: config.memoryEnabled !== false,
+    directorEnabled: config.directorEnabled !== false,
+    directorIntervalMinutes: Number.isFinite(config.directorIntervalMinutes) ? config.directorIntervalMinutes : defaults.directorIntervalMinutes,
     denoiseWatchEnabled: config.denoiseWatchEnabled !== false,
     denoiseWatchDir: asString(config.denoiseWatchDir, defaults.denoiseWatchDir),
     musicOnDone: config.musicOnDone !== false,
@@ -524,6 +531,21 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
     } catch {}
   }, 5000)
   if (typeof turnTimer.unref === 'function') turnTimer.unref()
+
+  // 上层定时出令：有空且到点时，让 RL 挑一条指令交给 DSH
+  let lastDirectorAt = 0
+  const directorTimer = setInterval(() => {
+    try {
+      const live = settings.get()
+      if (live?.directorEnabled === false) return
+      if (activeTurns > 0) return
+      const interval = (Number(live?.directorIntervalMinutes) || 45) * 60000
+      if (Date.now() - lastDirectorAt < interval) return
+      lastDirectorAt = Date.now()
+      Promise.resolve(config.director?.runOnce?.({ reason: 'auto' })).catch(() => {})
+    } catch {}
+  }, 60000)
+  if (typeof directorTimer.unref === 'function') directorTimer.unref()
   const greeter = createGreeter({
     config: () => settings.get(),
     speak: (text, options) => {
@@ -875,6 +897,30 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({ kind: 'exact', path: CHAT_TARGET_ENDPOINT, handler: chatHandlers.target }),
         'dsh-dafeiyu: local chat target endpoint',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/debug/director',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            try { jsonResponse(res, 200, config.director?.status?.() ?? {}) } catch (error) { jsonResponse(res, 500, { error: String(error?.message ?? error) }) }
+          },
+        }),
+        'dsh-dafeiyu: director debug',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/director/run',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            Promise.resolve(config.director?.runOnce?.({ reason: 'http' }))
+              .then((result) => jsonResponse(res, 200, result ?? {}))
+              .catch((error) => jsonResponse(res, 500, { error: String(error?.message ?? error) }))
+          },
+        }),
+        'dsh-dafeiyu: director run',
       )
       httpCtx.effect(
         () => httpCtx.webServer.register({
@@ -1473,6 +1519,13 @@ export function apply(ctx, config = {}) {
   const evolution = createEvolutionStore({ logger })
   const policy = createPolicy({ logger })
   try { registerRlTool(ctx, { policy, logger }) } catch (error) { logger.error?.(`RL 工具挂载失败: ${error?.message ?? error}`) }
+  const orderPolicy = createPolicy({
+    path: join(homedir(), '.dsh', 'dsh-dafeiyu-director-policy.json'),
+    actions: ORDERS.map((order) => order.id),
+    logger,
+  })
+  const director = createDirector({ ctx, policy: orderPolicy, logger })
+  try { registerDirectorTool(ctx, { director, logger }) } catch (error) { logger.error?.(`调度台工具挂载失败: ${error?.message ?? error}`) }
   const notifier = createNotifier({ webhooks: Array.isArray(config.notifyWebhooks) ? config.notifyWebhooks : [], logger })
   try { registerNotifyTool(ctx, { notifier, logger }) } catch (error) { logger.error?.(`推送工具挂载失败: ${error?.message ?? error}`) }
   try {
@@ -1487,6 +1540,7 @@ export function apply(ctx, config = {}) {
     novelRootResolved: novelRoot,
     memoryStore: memory,
     policy,
+    director,
     routine,
     english,
     evolution,
