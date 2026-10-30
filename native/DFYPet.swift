@@ -51,6 +51,15 @@ final class PetView: NSView {
         app?.drag(event)
     }
 
+    override func mouseEntered(with event: NSEvent) {
+        app?.showCard(seconds: 4)
+        needsDisplay = true
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        app?.showCard(seconds: 3)
+    }
+
     override func mouseUp(with event: NSEvent) {
         app?.endDrag(event)
     }
@@ -360,6 +369,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var voiceName = "Tingting"
     var voiceRate = 170
     var feedButtonRect: NSRect = .zero
+    var cardVisible = true
+    var cardHideAt = Date().addingTimeInterval(8)
     var baseURL = URL(string: "http://127.0.0.1:3080")!
     var microClips: [String] = []
     var microIntervals: [String: [Int]] = [:]
@@ -413,6 +424,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         petView = PetView(frame: NSRect(origin: .zero, size: size))
         petView.app = self
         window.contentView = petView
+        petView.addTrackingArea(NSTrackingArea(rect: .zero,
+                                               options: [.activeAlways, .mouseEnteredAndExited, .inVisibleRect],
+                                               owner: petView, userInfo: nil))
         positionWindow()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -496,6 +510,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         if bubbleVisible && Date() > bubbleUntil { bubbleVisible = false }
+        if cardVisible && Date() > cardHideAt { cardVisible = false }
         petView.needsDisplay = true
     }
 
@@ -550,14 +565,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func showBubble(_ text: String, seconds: TimeInterval) {
+        showCard(seconds: max(5, seconds))
         bubbleText = text
         bubbleVisible = true
         bubbleUntil = Date().addingTimeInterval(seconds)
         petView.needsDisplay = true
     }
 
+    func showCard(seconds: TimeInterval = 8) {
+        cardVisible = true
+        cardHideAt = Date().addingTimeInterval(seconds)
+    }
+
     // 复刻原来的状态卡：标题 / 明细 / 余额
     func drawStatusCard(in bounds: NSRect) {
+        guard cardVisible else { return }
         let cardHeight: CGFloat = 84
         let gap: CGFloat = 12
         let card = NSRect(x: 8, y: 344 + gap, width: bounds.width - 16, height: cardHeight)
@@ -864,6 +886,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         lastKnownRemaining = remaining
         chatWindow?.updateStatus(state: lastStateText, balance: nil, tasks: lastTasksText)
+        showCard()
         petView.needsDisplay = true
     }
 
@@ -982,6 +1005,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             var detail = (message["activity"] as? String) ?? (message["state"] as? String) ?? ""
             if let text = message["detail"] as? String, !text.isEmpty { detail = text }
             lastStateText = detail
+            showCard()
             chatWindow?.updateStatus(state: detail.isEmpty ? nil : detail, balance: nil, tasks: nil)
         case "tasks":
             let items = (message["tasks"] as? [[String: Any]]) ?? []
@@ -995,6 +1019,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                let total = cny["total"] as? String {
                 let value = Double(total) ?? 0
                 lastBalanceText = String(format: "余额 ¥%.2f", value)
+                showCard()
                 chatWindow?.updateStatus(state: nil, balance: lastBalanceText, tasks: nil)
             }
         case "ping":
