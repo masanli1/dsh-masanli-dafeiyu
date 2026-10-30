@@ -1066,3 +1066,11 @@ Lv.4 不再只是光晕，而是一整套「劈刀」演出（每帧程序化绘
 - `learn-pose.py` 支持 `--window full --out-fps 12`：把整段视频（77s）学成一个长动作；
 - 新增 `POST /plugins/dsh-dafeiyu/emote?clip=raiden_full` 直接播放指定动作；
 - 播放 `raiden_full` 时会用 **afplay 同步播放原视频音轨**（`~/.dsh/dsh-dafeiyu/effects/audio/raiden_full.m4a`）。
+
+## 整段动作播放（chat.106）
+
+`raiden_full`：547 帧 / 83ms ≈ **45 秒**，`loop: false`，把整段视频里的动作序列演一遍
+（MediaPipe 在 456 个采样帧上检测到骨骼点，压缩成 12fps 输出）。
+
+播放：`POST /plugins/dsh-dafeiyu/emote?clip=raiden_full`
+（配原声时把音轨放到 `~/.dsh/dsh-dafeiyu/effects/audio/raiden_full.m4a`；本次因时长不完全一致未启用）

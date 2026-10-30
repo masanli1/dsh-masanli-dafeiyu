@@ -152,6 +152,8 @@ def s2_config(name, args):
     data["train"]["grad_ckpt"] = False
     data["model"]["version"] = "v2"
     data["data"]["exp_dir"] = data["s2_ckpt_dir"] = out
+    # s2_train 会往 <exp>/logs_s2_v2/ 写检查点，但这个目录它自己不建
+    os.makedirs(os.path.join(out, "logs_s2_v2"), exist_ok=True)
     data["save_weight_dir"] = os.path.join(GSV_ROOT, "logs", f"{name}_weights")
     data["name"] = name
     data["version"] = "v2"
