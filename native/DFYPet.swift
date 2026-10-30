@@ -462,6 +462,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         scheduleMicro()
         watchDenoise()
+        // 出场：从高处走下来
+        if clips["descend"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { self.playReaction("descend") }
+        }
         fetchMood()
         fetchEvolution()
         Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in self.fetchMood(); self.fetchEvolution() }
