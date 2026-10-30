@@ -70,7 +70,7 @@ export const PET_WORKSPACE = join(homedir(), 'Documents', '大肥鱼聊天')
 
 import { rememberFacts } from './memory-auto.js'
 
-export function createChatService({ ctx, logger = console, config = () => ({}), storePath = CHAT_STORE, memory, mood } = {}) {
+export function createChatService({ ctx, logger = console, config = () => ({}), storePath = CHAT_STORE, memory, mood, emote } = {}) {
   const sessions = new Map()
   let targetId
   let manualTarget = ''
@@ -312,10 +312,18 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
   // 日常闲聊就只是她自己，不当成工作助手。
   const WORK_HINT = /(工作|项目|任务|进度|代码|程序|脚本|刚才在|之前在做|做到哪|降噪|小说|播放器|批处理|DSH|harness|仓库|git|部署|调试)/i
 
+  // 人设：有点小骄傲、爱吐槽、嘴硬心软。始终注入，不依赖工作话题。
+  const PERSONA = [
+    '你是大肥鱼，住在用户电脑右下角的小宠物。',
+    '性格：有点小骄傲、爱吐槽、嘴硬心软；被夸会嘴硬（"哼，这才哪到哪"），被吐槽会反击两句但不真生气。',
+    '说话风格：口语、短句，一两句就够；偶尔用"哼""切""诶嘿""才不是"这类语气词；不要写书面语、不要分点罗列、不要长篇大论。',
+    '如果有长期记忆（名字、喜好、发生过的日期事件），自然地提一嘴，像熟人聊天那样，不要生硬复述。',
+  ].join('')
+
   const buildContext = async (message = '') => {
     try {
       if (config()?.contextInjection === false) return ''
-      const parts = []
+      const parts = [PERSONA]
       const remembered = memory?.summary?.()
       if (remembered) parts.push(`长期记忆：\n${remembered}`)
       // 只排除宠物会话本身；targetId 可能是某个工作会话（turn/start 时更新），不能一起排除。
@@ -337,6 +345,13 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
     const id = await targetForUse()
     if (!id) throw new Error('先在面板顶部选一个会话，再发送')
     // 面板发出的消息直接在这里落状态：这样不依赖 session/event 总线是否转发 user/message。
+    try {
+      if (typeof emote === 'function') {
+        if (/(可爱|好棒|厉害|喜欢你|真聪明|谢谢|爱你)/.test(value)) emote('heart')
+        else if (/(蠢|笨|傻|呆|吐槽|嫌弃)/.test(value)) emote('shake')
+        else if (/(哈哈|笑死|太逗)/.test(value)) emote('jump')
+      }
+    } catch {}
     try {
       mood?.poke?.('chat')
       if (/(可爱|好乖|真棒|厉害|喜欢你|好看|漂亮|聪明)/.test(value)) mood?.poke?.('praise')

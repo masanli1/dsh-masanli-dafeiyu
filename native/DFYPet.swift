@@ -1098,6 +1098,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 showCard()
                 chatWindow?.updateStatus(state: nil, balance: lastBalanceText, tasks: nil)
             }
+        case "emote":
+            if let clip = message["clip"] as? String { playReaction(clip) }
         case "ping":
             respond("pong")
         case "shutdown":

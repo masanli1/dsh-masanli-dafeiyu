@@ -9,6 +9,7 @@ import { createSettingsScope } from './settings-scope.js'
 import { createChatHandlers, createChatService } from './chat.js'
 import { createGreeter } from './greeter.js'
 import { createSpeaker } from './speech-v2.js'
+import { createWakeService } from './voice.js'
 import { apply as registerDenoiseTool, createDenoiseTool, findPython, findFfmpeg } from './denoise.js'
 import { createDenoiseJobs } from './denoise-jobs.js'
 import { createPowerKeeper } from './power.js'
@@ -93,6 +94,9 @@ export const Config = Schema.object({
   voicePreset: Schema.string().default('').description('学来的自定义音色（留空 = 原声）。在「声音复刻」里学会后填音色名'),
   voiceRate: Schema.number().min(100).max(320).step(10).default(170).description('语速（每分钟词数）'),
   voiceVolume: Schema.number().min(0.05).max(1).step(0.05).default(0.9).description('语音音量'),
+  wakeEnabled: Schema.boolean().default(false).description('语音唤醒：常驻听麦克风，喊唤醒词就叫醒她（本机识别，不上传录音）'),
+  wakeKeyword: Schema.string().default('大肥鱼').description('唤醒词（默认「大肥鱼」，多个用逗号分隔）'),
+  wakeReply: Schema.string().default('在呢，我在听').description('被叫醒时说的第一句话'),
   greetingEnabled: Schema.boolean().default(true).description('长时间没人理时主动打招呼'),
   greetingAfterMinutes: Schema.number().min(1).max(240).step(1).default(12).description('空闲多少分钟后打招呼'),
   greetingRepeatMinutes: Schema.number().min(5).max(240).step(5).default(25).description('两次打招呼的最小间隔'),
@@ -146,6 +150,9 @@ const defaults = Object.freeze({
   voicePreset: '',
   voiceRate: 170,
   voiceVolume: 0.9,
+  wakeEnabled: false,
+  wakeKeyword: '大肥鱼',
+  wakeReply: '在呢，我在听',
   greetingEnabled: true,
   greetingAfterMinutes: 12,
   greetingRepeatMinutes: 25,
@@ -184,6 +191,9 @@ function publicConfig(config = {}) {
     voicePreset: asString(config.voicePreset, ''),
     voiceRate: Number.isFinite(config.voiceRate) ? config.voiceRate : defaults.voiceRate,
     voiceVolume: Number.isFinite(config.voiceVolume) ? config.voiceVolume : defaults.voiceVolume,
+    wakeEnabled: config.wakeEnabled === true,
+    wakeKeyword: asString(config.wakeKeyword, defaults.wakeKeyword),
+    wakeReply: asString(config.wakeReply, defaults.wakeReply),
     greetingEnabled: config.greetingEnabled !== false,
     greetingAfterMinutes: Number.isFinite(config.greetingAfterMinutes) ? config.greetingAfterMinutes : defaults.greetingAfterMinutes,
     greetingRepeatMinutes: Number.isFinite(config.greetingRepeatMinutes) ? config.greetingRepeatMinutes : defaults.greetingRepeatMinutes,
@@ -370,7 +380,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   if (typeof moodTimer.unref === 'function') moodTimer.unref()
   const PRAISE = /(可爱|好乖|真棒|厉害|喜欢你|好看|漂亮|聪明|谢谢大肥鱼|辛苦了)/
   const FEED = /(吃饭|喂你|给你吃|零食|喝点)/
-  const chat = createChatService({ ctx, logger, config: () => settings.get(), memory: config.memoryStore, mood })
+  const chat = createChatService({ ctx, logger, config: () => settings.get(), memory: config.memoryStore, mood, emote: config.emote })
   const chatHandlers = createChatHandlers(chat, logger)
   const ffmpegCandidates = () => [
     process.env.DF_FACTORY_FFMPEG,
@@ -557,6 +567,36 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       })
     } catch {}
   }
+
+  // 语音唤醒：常驻听麦克风，喊一句唤醒词就叫醒她。
+  // 识别全在本机（sherpa-onnx 关键词检测），录音不出门。
+  const wakeReact = (keyword) => {
+    const live = settings.get()
+    if (live.wakeEnabled !== true) return
+    pulse(asString(live.wakeReply, '在呢，我在听'))
+    try { eventStream.broadcast({ kind: 'wake', keyword, at: Date.now() }) } catch {}
+    try { config.evolution?.addXp?.(2) } catch {}
+    try { noteLife('被唤醒', `听见「${keyword}」把我叫醒了`) } catch {}
+    try { config.routine?.record?.('wake') } catch {}
+  }
+  const wake = createWakeService({
+    logger,
+    keyword: asString(settings.get()?.wakeKeyword, '大肥鱼'),
+    onWake: wakeReact,
+    onStatus: (status) => {
+      try { eventStream.broadcast({ kind: 'wake-status', status }) } catch {}
+    },
+  })
+  const syncWake = () => {
+    const live = settings.get()
+    if (live.wakeEnabled !== true || live.enabled === false) {
+      if (wake.status.enabled) wake.stop()
+      return
+    }
+    const changed = wake.configure({ keyword: asString(live.wakeKeyword, '大肥鱼') })
+    if (changed || !wake.status.running) wake.restart()
+  }
+  syncWake()
 
   // 生活记忆：把"发生过的事"写进长期记忆，按天去重，同类一天只记一条。
   const lifeLogged = new Map()
@@ -774,6 +814,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
     try {
       balance.configure(next.enabled !== false && next.balanceEnabled, next.balanceSource)
       syncPower()
+      syncWake()
       if (next.enabled === false) {
         if (restartTimer) {
           clearTimeout(restartTimer)
@@ -995,6 +1036,36 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
         }),
         'dsh-dafeiyu: mood',
       )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/wake/status',
+          handler: async (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            if (req.method === 'POST') {
+              try {
+                const chunks = []
+                for await (const chunk of req) chunks.push(chunk)
+                const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+                if (body.test === true) {
+                  wakeReact(String(body.keyword ?? '测试'))
+                  return jsonResponse(res, 200, { ok: true, tested: true, status: wake.status })
+                }
+                if (body.enabled === true || body.enabled === false) {
+                  if (typeof settings.update === 'function') await settings.update({ wakeEnabled: body.enabled === true })
+                  const live = settings.get()
+                  if (body.enabled === true) { wake.configure({ keyword: asString(live.wakeKeyword, '大肥鱼') }); wake.restart() } else { wake.stop() }
+                  return jsonResponse(res, 200, { ok: true, status: wake.status })
+                }
+              } catch (error) {
+                return jsonResponse(res, 500, { ok: false, error: String(error?.message ?? error) })
+              }
+            }
+            jsonResponse(res, 200, { ok: true, status: wake.status })
+          },
+        }),
+        'dsh-dafeiyu: wake status',
+      ),
       httpCtx.effect(
         () => httpCtx.webServer.register({
           kind: 'exact',
@@ -1371,6 +1442,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
     unwatch()
     settings.dispose?.()
     balance.stop()
+    wake.stop()
     greeter.stop()
     power.stop()
     speaker.stop()
@@ -1396,7 +1468,17 @@ export function apply(ctx, config = {}) {
   try { registerEvolutionTool(ctx, { evolution, logger }) } catch (error) { logger.error?.(`进化工具挂载失败: ${error?.message ?? error}`) }
   try { registerRoutineTool(ctx, { routine, logger }) } catch (error) { logger.error?.(`作息工具挂载失败: ${error?.message ?? error}`) }
   try { registerEnglishTool(ctx, { english, logger }) } catch (error) { logger.error?.(`英语工具挂载失败: ${error?.message ?? error}`) }
-  mount(ctx, { ...config, novelRootResolved: novelRoot, memoryStore: memory, routine, english, evolution })
+  mount(ctx, {
+    ...config,
+    novelRootResolved: novelRoot,
+    memoryStore: memory,
+    routine,
+    english,
+    evolution,
+    emote: (clip) => {
+      try { bridge?.send(createMessage(CompanionMessageKind.EMOTE, { clip })) } catch {}
+    },
+  })
   // 降噪能力随伴侣一起安装：denoise_audio 工具（NPSS 核心，本地 CPU）。
   try {
     registerDenoiseTool(ctx, logger)
