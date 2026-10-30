@@ -356,6 +356,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var evoLevel: Int = 0
     var evoStage: String = "初生"
     var sparkPhase: Double = 0
+    var ultimateStart: Date? = nil
+    var voiceName = "Tingting"
+    var voiceRate = 170
     var feedButtonRect: NSRect = .zero
     var baseURL = URL(string: "http://127.0.0.1:3080")!
     var microClips: [String] = []
@@ -378,6 +381,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         let env = ProcessInfo.processInfo.environment
+        voiceName = env["DSH_DAFEIYU_VOICE"] ?? "Tingting"
+        voiceRate = Int(env["DSH_DAFEIYU_VOICE_RATE"] ?? "") ?? 170
         if let webui = env["DSH_DAFEIYU_WEBUI_URL"], let url = URL(string: webui) {
             var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
             components?.path = ""
@@ -414,6 +419,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { _ in self.tick(0.02) }
         // 直接盯 NAS 上的降噪批处理状态文件（不依赖 host 推送）
+        if ProcessInfo.processInfo.environment["DSH_DAFEIYU_FORCE_ULTIMATE"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                self.currentClip = "ultimate"; self.frameIndex = 0; self.startUltimate()
+            }
+        }
         if let forced = ProcessInfo.processInfo.environment["DSH_DAFEIYU_FORCE_CLIP"], clips[forced] != nil {
             currentClip = forced
             frameIndex = 0
@@ -517,6 +527,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let roll = Double.random(in: 0...1)
             if self.evoLevel >= 4, self.clips["ultimate"] != nil, roll < 0.18 {
                 name = "ultimate"
+                self.startUltimate()
             } else if self.evoLevel >= 4, self.clips["slash"] != nil, roll < 0.55 {
                 name = "slash"
             } else if self.hunger > 0.6, self.clips["eat_rice"] != nil, roll < 0.75 {
@@ -671,6 +682,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 传说形态：紫电背景 + 斜向劈刀 + 碎片，每 3 秒来一次强闪
     func drawLegendary(in bounds: NSRect) {
         let now = Date().timeIntervalSinceReferenceDate
+        drawUltimateIfNeeded(in: bounds, now: now)
         let flash = max(0, sin(now * 2.1))            // 0..1 呼吸式闪光
         let burst = pow(max(0, sin(now * 0.9)), 6)     // 每 ~3.5 秒一次强劈
 
@@ -757,6 +769,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+
+    func drawUltimateIfNeeded(in bounds: NSRect, now: TimeInterval) {
+        guard let start = ultimateStart else { return }
+        let elapsed = Date().timeIntervalSince(start)
+        let duration = 2.2
+        if elapsed > duration { ultimateStart = nil; return }
+        let t = elapsed / duration
+
+        // 1) 全屏闪白（一闪那一刻最亮）
+        let flash = t < 0.45 ? max(0, 1 - abs(t - 0.30) / 0.18) : 0
+        if flash > 0 {
+            NSColor(calibratedWhite: 1, alpha: 0.75 * flash).setFill()
+            bounds.fill()
+        }
+
+        // 2) 放射光条
+        let cx = bounds.midX, cy = bounds.height * 0.46
+        let rayAlpha = 0.55 * max(0, 1 - t * 1.4)
+        if rayAlpha > 0.02 {
+            for index in 0..<18 {
+                let angle = Double(index) * (2 * Double.pi / 18) + now * 1.5
+                let path = NSBezierPath()
+                path.move(to: NSPoint(x: cx, y: cy))
+                path.line(to: NSPoint(x: cx + CGFloat(cos(angle)) * bounds.width,
+                                      y: cy + CGFloat(sin(angle)) * bounds.width))
+                path.lineWidth = index % 2 == 0 ? 2.5 : 1.2
+                NSColor(calibratedRed: 0.85, green: 0.72, blue: 1.0, alpha: rayAlpha).setStroke()
+                path.stroke()
+            }
+        }
+
+        // 3) 横扫的新月刀光：从右扫到左
+        let sweep = min(1, max(0, (t - 0.18) / 0.5))
+        if sweep > 0 && sweep < 1.001 {
+            let x = bounds.width * (1.25 - 1.5 * sweep)
+            let crescent = NSBezierPath()
+            crescent.move(to: NSPoint(x: x, y: 0))
+            crescent.curve(to: NSPoint(x: x, y: bounds.height),
+                           controlPoint1: NSPoint(x: x - bounds.width * 0.22, y: bounds.height * 0.35),
+                           controlPoint2: NSPoint(x: x - bounds.width * 0.22, y: bounds.height * 0.65))
+            crescent.lineWidth = 16
+            NSColor(calibratedRed: 0.75, green: 0.60, blue: 1.0, alpha: 0.55).setStroke()
+            crescent.stroke()
+            crescent.lineWidth = 4
+            NSColor(calibratedWhite: 1, alpha: 0.92).setStroke()
+            crescent.stroke()
+        }
+
+        // 4) 落雷
+        if t > 0.45 && t < 0.95 {
+            let alpha = 1 - (t - 0.45) / 0.5
+            for index in 0..<4 {
+                let path = NSBezierPath()
+                var x = bounds.midX + CGFloat(index) * 26 - 52
+                var y = bounds.height
+                path.move(to: NSPoint(x: x, y: y))
+                for _ in 0..<7 {
+                    x += CGFloat(Int.random(in: -20...20))
+                    y -= bounds.height / 7
+                    path.line(to: NSPoint(x: x, y: y))
+                }
+                path.lineWidth = 2.5
+                NSColor(calibratedRed: 0.82, green: 0.68, blue: 1.0, alpha: 0.85 * alpha).setStroke()
+                path.stroke()
+            }
+        }
+    }
+
     func watchDenoise() {
         let dir = ProcessInfo.processInfo.environment["DSH_DAFEIYU_DENOISE_DIR"] ?? "/Volumes/15226550291/课程"
         let statePath = dir + "/_denoise-state.json"
@@ -785,6 +865,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lastKnownRemaining = remaining
         chatWindow?.updateStatus(state: lastStateText, balance: nil, tasks: lastTasksText)
         petView.needsDisplay = true
+    }
+
+    let ULTIMATE_LINES = [
+        "此刻，寂灭之时。",
+        "影随影，刀随刀。",
+        "无念，无想，无我。",
+        "斩。",
+    ]
+
+    func startUltimate() {
+        ultimateStart = Date()
+        let line = ULTIMATE_LINES.randomElement() ?? ULTIMATE_LINES[0]
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+        task.arguments = ["-v", voiceName, "-r", String(voiceRate), line]
+        try? task.run()
+        showBubble(line, seconds: 3)
     }
 
     func feed() {

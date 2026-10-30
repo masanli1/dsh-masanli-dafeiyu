@@ -638,6 +638,8 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
         DSH_DAFEIYU_BUBBLE_MODE: String(resolved.bubbleMode ?? defaults.bubbleMode),
         DSH_DAFEIYU_BUBBLE_STATES: (Array.isArray(resolved.bubbleStates) ? resolved.bubbleStates : defaults.bubbleStates).join(','),
         DSH_DAFEIYU_WEBUI_URL: resolveClientTarget({ ...config, ...resolved }).url,
+        DSH_DAFEIYU_VOICE: asString(resolved.voiceName, defaults.voiceName),
+        DSH_DAFEIYU_VOICE_RATE: String(resolved.voiceRate ?? defaults.voiceRate),
         DSH_DAFEIYU_CHAT_IDLE_SEC: String(resolved.chatIdleSeconds ?? defaults.chatIdleSeconds),
         DSH_DAFEIYU_DENOISE_DIR: String(resolved.denoiseWatchDir ?? defaults.denoiseWatchDir).replace(/^~(?=$\/)/, homedir()),
         DSH_DAFEIYU_MUSIC_DIR: String(resolved.musicPlaylist ?? defaults.musicPlaylist).replace(/^~(?=$\/)/, homedir()),
