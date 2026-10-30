@@ -414,6 +414,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { _ in self.tick(0.02) }
         // 直接盯 NAS 上的降噪批处理状态文件（不依赖 host 推送）
+        if let forced = ProcessInfo.processInfo.environment["DSH_DAFEIYU_FORCE_CLIP"], clips[forced] != nil {
+            currentClip = forced
+            frameIndex = 0
+        }
         scheduleMicro()
         watchDenoise()
         fetchMood()
@@ -510,7 +514,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         microTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { _ in
             guard self.currentClip == "idle", self.clips.count > 0 else { return }
             var name = self.microClips.randomElement() ?? "idle"
-            if self.hunger > 0.6, self.clips["eat_rice"] != nil, Double.random(in: 0...1) < 0.65 {
+            if self.evoLevel >= 4, self.clips["slash"] != nil, Double.random(in: 0...1) < 0.55 {
+                name = "slash"
+            } else if self.hunger > 0.6, self.clips["eat_rice"] != nil, Double.random(in: 0...1) < 0.65 {
                 name = "eat_rice"
             }
             self.oneShotClip = name
@@ -683,9 +689,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             gradient.draw(fromCenter: center, radius: 0, toCenter: center, radius: radius, options: [])
         }
 
-        // 2) 斜向刀光：从右下到左上的一道光刃
+        let slashing = currentClip == "slash"
+        // 2) 斜向刀光：从右下到左上的一道光刃（挥刀动画期间交给帧动画）
         let bladeStart = NSPoint(x: bounds.midX - bounds.width * 0.62, y: bounds.height * 0.05)
         let bladeEnd = NSPoint(x: bounds.midX + bounds.width * 0.62, y: bounds.height * 0.92)
+        if !slashing {
         let blade = NSBezierPath()
         blade.move(to: bladeStart)
         blade.line(to: bladeEnd)
@@ -698,14 +706,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         core.lineWidth = 3 + 7 * burst
         NSColor(calibratedWhite: 1, alpha: 0.75 + 0.25 * burst).setStroke()
         core.stroke()
+        }
 
         // 2.5) 劈砍弧光
+        if !slashing {
         let arc = NSBezierPath()
         arc.appendArc(withCenter: NSPoint(x: bounds.midX + bounds.width * 0.10, y: bounds.height * 0.42),
                       radius: bounds.width * 0.52, startAngle: 118, endAngle: 236, clockwise: false)
         arc.lineWidth = 5 + 16 * burst
         NSColor(calibratedRed: 0.85, green: 0.70, blue: 1.0, alpha: 0.35 + 0.45 * burst).setStroke()
         arc.stroke()
+        }
 
         // 3) 紫色闪电（每帧重新抖动）
         var seed = UInt64(now * 12) &* 6364136223846793005 &+ 1442695040888963407
