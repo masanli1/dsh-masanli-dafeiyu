@@ -70,7 +70,7 @@ export const PET_WORKSPACE = join(homedir(), 'Documents', '大肥鱼聊天')
 
 import { rememberFacts } from './memory-auto.js'
 
-export function createChatService({ ctx, logger = console, config = () => ({}), storePath = CHAT_STORE, memory, mood, emote } = {}) {
+export function createChatService({ ctx, logger = console, config = () => ({}), storePath = CHAT_STORE, memory, mood, emote, policy } = {}) {
   const sessions = new Map()
   let targetId
   let manualTarget = ''
@@ -320,10 +320,11 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
     '如果有长期记忆（名字、喜好、发生过的日期事件），自然地提一嘴，像熟人聊天那样，不要生硬复述。',
   ].join('')
 
-  const buildContext = async (message = '') => {
+  const buildContext = async (message = '', styleHint = '') => {
     try {
       if (config()?.contextInjection === false) return ''
       const parts = [PERSONA]
+      if (styleHint) parts.push(styleHint)
       const remembered = memory?.summary?.()
       if (remembered) parts.push(`长期记忆：\n${remembered}`)
       // 只排除宠物会话本身；targetId 可能是某个工作会话（turn/start 时更新），不能一起排除。
@@ -337,6 +338,17 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
       logger.warn?.(`dsh-dafeiyu chat: 生成上下文失败: ${error?.message ?? error}`)
       return ''
     }
+  }
+
+  let pendingChoice = null
+  const policyHint = (action) => {
+    const map = {
+      tsundere: '这轮更傲娇：嘴硬、先怼一句再顺着说。',
+      gentle: '这轮温柔一点：语气放松、多关心一句。',
+      playful: '这轮活泼一点：可以开玩笑、用感叹号。',
+      brief: '这轮尽量一句话说完。',
+    }
+    return map[action] ?? ''
   }
 
   const send = async (text) => {
@@ -363,7 +375,23 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
         if (result.added.length) logger.info?.(`dsh-dafeiyu 自动记忆: ${result.added.map((f) => f.key + '=' + f.value).join('、')}`)
       }
     } catch {}
-    const context = await buildContext(value)
+    // 强化学习：先用上一条消息的情绪给上一轮的选择打分，再按当前上下文选这轮的风格
+    let styleHint = ''
+    try {
+      if (policy) {
+        if (pendingChoice) {
+          const reward = /(可爱|好棒|厉害|喜欢你|真聪明|谢谢|爱你|哈哈|笑死|好玩)/.test(value) ? 1
+            : /(蠢|笨|傻|呆|无聊|没意思|讨厌|烦|不行|不对)/.test(value) ? -1
+              : 0
+          if (reward !== 0) policy.update(pendingChoice.context, pendingChoice.action, reward)
+        }
+        const context = policy.contextOf(value)
+        const choice = policy.choose(context)
+        pendingChoice = { context, action: choice.action }
+        styleHint = policyHint(choice.action)
+      }
+    } catch {}
+    const context = await buildContext(value, styleHint)
     const controller = ctx.get?.('sessionController')
     if (!controller?.prompt) throw new Error('当前 Host 没有提供会话写入服务')
     // The controller starts with `signal.throwIfAborted()`, so the cancellation
@@ -444,7 +472,7 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
     sessions: [...sessions.values()].map((record) => ({ id: record.id, title: record.title, at: record.at })),
   })
 
-  return { note, state, send, select, buildContext, stop, welcome, debug }
+  return { note, state, send, select, buildContext, stop, welcome, debug, policyStatus: () => policy?.status?.() ?? null }
 }
 
 export const CHAT_SERVER_VERSION = 'v5'

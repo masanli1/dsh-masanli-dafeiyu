@@ -22,6 +22,7 @@ import { createRoutineStore, registerRoutineTool } from './routine.js'
 import { createEnglishStore, registerEnglishTool } from './english.js'
 import { createEvolutionStore, registerEvolutionTool } from './evolution.js'
 import { createNotifier, registerNotifyTool } from './notify.js'
+import { createPolicy, registerRlTool } from './rl.js'
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { existsSync as fileExists, readFileSync as readFileSyncImpl, readdirSync as readdirSyncImpl } from 'node:fs'
@@ -380,7 +381,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   if (typeof moodTimer.unref === 'function') moodTimer.unref()
   const PRAISE = /(可爱|好乖|真棒|厉害|喜欢你|好看|漂亮|聪明|谢谢大肥鱼|辛苦了)/
   const FEED = /(吃饭|喂你|给你吃|零食|喝点)/
-  const chat = createChatService({ ctx, logger, config: () => settings.get(), memory: config.memoryStore, mood, emote: config.emote })
+  const chat = createChatService({ ctx, logger, config: () => settings.get(), memory: config.memoryStore, mood, emote: config.emote, policy: config.policy })
   const chatHandlers = createChatHandlers(chat, logger)
   const ffmpegCandidates = () => [
     process.env.DF_FACTORY_FFMPEG,
@@ -874,6 +875,17 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({ kind: 'exact', path: CHAT_TARGET_ENDPOINT, handler: chatHandlers.target }),
         'dsh-dafeiyu: local chat target endpoint',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/debug/rl',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            try { jsonResponse(res, 200, config.policy?.status?.() ?? {}) } catch (error) { jsonResponse(res, 500, { error: String(error?.message ?? error) }) }
+          },
+        }),
+        'dsh-dafeiyu: rl debug',
       )
       httpCtx.effect(
         () => httpCtx.webServer.register({
@@ -1459,6 +1471,8 @@ export function apply(ctx, config = {}) {
   const routine = createRoutineStore({ logger })
   const english = createEnglishStore({ logger })
   const evolution = createEvolutionStore({ logger })
+  const policy = createPolicy({ logger })
+  try { registerRlTool(ctx, { policy, logger }) } catch (error) { logger.error?.(`RL 工具挂载失败: ${error?.message ?? error}`) }
   const notifier = createNotifier({ webhooks: Array.isArray(config.notifyWebhooks) ? config.notifyWebhooks : [], logger })
   try { registerNotifyTool(ctx, { notifier, logger }) } catch (error) { logger.error?.(`推送工具挂载失败: ${error?.message ?? error}`) }
   try {
@@ -1472,6 +1486,7 @@ export function apply(ctx, config = {}) {
     ...config,
     novelRootResolved: novelRoot,
     memoryStore: memory,
+    policy,
     routine,
     english,
     evolution,
