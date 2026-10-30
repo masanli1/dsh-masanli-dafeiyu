@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import Schema from '@deepseek-ai/schemastery'
@@ -1596,26 +1596,33 @@ export function apply(ctx, config = {}) {
     parameters: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['learn', 'scene'] },
+        action: { type: 'string', enum: ['learn', 'scene', 'pose'] },
         video: { type: 'string', description: '视频文件路径' },
-        name: { type: 'string', description: '动作名（默认 learned）' },
+        name: { type: 'string', description: '动作名（默认 learned / pose）' },
+        intensity: { type: 'number', description: '动作幅度倍数（默认 1.0，0.3–3.0）' },
       },
       required: ['action'],
       additionalProperties: false,
     },
     output: { schema: { type: 'object', properties: { ok: { type: 'boolean' }, summary: { type: 'string' } }, additionalProperties: true }, render: (_a, v) => [{ type: 'text', text: v.summary ?? '' }] },
     async execute(args) {
-      if (!['learn', 'scene'].includes(args.action)) throw new Error('只支持 learn / scene')
+      if (!['learn', 'scene', 'pose'].includes(args.action)) throw new Error('只支持 learn / scene / pose')
       const video = String(args.video ?? '').trim()
       if (!video) throw new Error('缺少 video 路径')
       const name = String(args.name ?? 'learned').replace(/[^\w.-]/g, '') || 'learned'
-      const python = (await findPython({ logger })).bin
-      const scriptName = args.action === 'scene' ? 'learn-scene.py' : 'learn-motion.py'
+      // 姿态估计需要 OpenCV：优先用装好 mediapipe 的 venv，其次回退到内置 Python
+      const poseVenv = join(homedir(), 'Downloads', 'dfy', 'pose-venv', 'bin', 'python')
+      const python = args.action === 'pose' && existsSync(poseVenv)
+        ? poseVenv
+        : (await findPython({ logger })).bin
+      const scriptName = args.action === 'scene' ? 'learn-scene.py' : args.action === 'pose' ? 'learn-pose.py' : 'learn-motion.py'
       const script = join(dirname(new URL(import.meta.url).pathname), '..', 'scripts', scriptName)
       const ffmpeg = await findFfmpeg({ logger }).catch(() => '')
       const { spawn } = await import('node:child_process')
       const output = await new Promise((resolve, reject) => {
-        const child = spawn(python, [script, video, name], { env: { ...process.env, DFY_FFMPEG: ffmpeg || process.env.DFY_FFMPEG || '' } })
+        const scriptArgs = [script, video, name]
+        if (args.action === 'pose' && Number.isFinite(Number(args.intensity))) scriptArgs.push('--intensity', String(args.intensity))
+        const child = spawn(python, scriptArgs, { env: { ...process.env, DFY_FFMPEG: ffmpeg || process.env.DFY_FFMPEG || '' } })
         let stdout = ''
         let stderr = ''
         child.stdout.on('data', (chunk) => { stdout += chunk })
@@ -1624,6 +1631,9 @@ export function apply(ctx, config = {}) {
         child.on('exit', (code) => code === 0 ? resolve(stdout) : reject(new Error(stderr.slice(-500) || `退出码 ${code}`)))
       })
       const result = JSON.parse(output.trim().split('\n').pop())
+      if (args.action === 'pose') {
+        return { ok: true, ...result, summary: `已用骨骼点学会动作「${result.clip}」：${result.frames} 帧（最激烈窗口 ${result.window.join('–')}，强度 ${result.intensity}）` }
+      }
       if (args.action === 'scene') {
         return { ok: true, ...result, summary: `已学会出场背景与视角：地平线 ${result.horizon}、主体尺度 ${result.scale}、推镜 ${result.dolly}` }
       }

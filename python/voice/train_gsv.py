@@ -169,6 +169,33 @@ def cmd_s2(args):
     raise SystemExit(proc.returncode)
 
 
+def cmd_semantic(args):
+    """单独重算 6-name2semantic（3-get-semantic 看到旧文件会直接跳过）。"""
+    name = args.name
+    out = exp_dir(name)
+    list_path = os.path.join(out, f"{name}.list")
+    part = os.path.join(out, "6-name2semantic-0.tsv")
+    if os.path.isfile(part):
+        os.remove(part)
+    run_stage(os.path.join("GPT_SoVITS", "prepare_datasets", "3-get-semantic.py"), {
+        "inp_text": list_path,
+        "inp_wav_dir": os.path.join(os.path.expanduser(args.dataset), "clips"),
+        "exp_name": name,
+        "opt_dir": out,
+        "i_part": "0",
+        "all_parts": "1",
+        "is_half": "False",
+        "_CUDA_VISIBLE_DEVICES": "0",
+        "pretrained_s2G": S2_G,
+        "s2config_path": "GPT_SoVITS/configs/s2.json",
+        "version": "v2",
+    }, "3-get-semantic")
+    src = os.path.join(out, "6-name2semantic-0.tsv")
+    if os.path.isfile(src):
+        shutil.copyfile(src, os.path.join(out, "6-name2semantic.tsv"))
+        print(json.dumps({"ok": True, "lines": sum(1 for _ in open(src, encoding="utf-8"))}, ensure_ascii=False))
+
+
 def cmd_status(args):
     out = exp_dir(args.name)
     if not os.path.isdir(out):
@@ -202,6 +229,11 @@ def main(argv=None):
     p.add_argument("--epochs", type=int, default=8)
     p.add_argument("--save-every", type=int, default=4)
     p.set_defaults(func=cmd_s2)
+
+    p = sub.add_parser("semantic")
+    p.add_argument("--name", default="teacher")
+    p.add_argument("--dataset", default=os.path.join(common.VOICES, "dataset-ocr2"))
+    p.set_defaults(func=cmd_semantic)
 
     p = sub.add_parser("status")
     p.add_argument("--name", default="teacher")

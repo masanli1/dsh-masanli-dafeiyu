@@ -1039,3 +1039,12 @@ Lv.4 不再只是光晕，而是一整套「劈刀」演出（每帧程序化绘
    给宠物加"放大 + 下移 + 推近"的镜头运动（仰视感）。
 
 工具：`motion action=scene video=/path/xx.mp4`（动作学习是 `action=learn`）。
+
+## 骨骼点学姿势（chat.102）
+
+- **MediaPipe**（装在 `~/Downloads/dfy/pose-venv`，模型 `pose_landmarker_lite.task` 5.8 MB，纯本地）；
+  内置 Python 因 hardened runtime 无法加载 opencv（Team ID 校验），所以走独立 venv；
+- `scripts/learn-pose.py`：10fps 抽帧 → PoseLandmarker 33 点 → 用肩/腕速度找**最激烈窗口**
+  （本次 17–42 帧）→ 肩线倾角、髋部起伏、头部横向、手腕高度映射成旋转/位移/缩放；
+- **强度可调** `--intensity 0.3–3.0`；
+- 工具：`motion action=pose video=... name=... intensity=1.2`。
