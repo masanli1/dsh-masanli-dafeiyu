@@ -25,6 +25,7 @@ final class PetView: NSView {
                                 height: size.height)
             image.draw(in: target)
         }
+        app.drawEvolution(in: bounds)
         app.drawStatusCard(in: bounds)
         if app.bubbleVisible, let bubble = app.bubbleText as String? {
             app.drawBubble(text: bubble, in: bounds)
@@ -352,6 +353,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var lastTasksText = ""
     var lastKnownRemaining: Int? = nil
     var hunger: Double = 0
+    var evoLevel: Int = 0
+    var evoStage: String = "初生"
+    var sparkPhase: Double = 0
     var feedButtonRect: NSRect = .zero
     var baseURL = URL(string: "http://127.0.0.1:3080")!
     var microClips: [String] = []
@@ -413,7 +417,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         scheduleMicro()
         watchDenoise()
         fetchMood()
-        Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in self.fetchMood() }
+        fetchEvolution()
+        Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in self.fetchMood(); self.fetchEvolution() }
         Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in self.watchDenoise() }
         startStdin()
         respond("ready")
@@ -565,7 +570,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let size = text.size(withAttributes: rightAttrs)
             text.draw(at: NSPoint(x: card.maxX - 16 - size.width, y: card.minY + 50), withAttributes: rightAttrs)
         }
-        let hungerText = String(format: "饿 %.0f%%", hunger * 100)
+        let hungerText = String(format: "饿 %.0f%% · Lv.%d %@", hunger * 100, evoLevel, evoStage)
         let hungerAttrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 11.5),
             .foregroundColor: hunger > 0.65 ? NSColor(calibratedRed: 0.78, green: 0.35, blue: 0.25, alpha: 1)
@@ -600,11 +605,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func fetchEvolution() {
+        guard let data = get("/plugins/dsh-dafeiyu/evolution"),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        if let level = object["level"] as? Int { evoLevel = level }
+        if let stage = object["stage"] as? String { evoStage = stage }
+        petView.needsDisplay = true
+    }
+
     func fetchMood() {
         guard let data = get("/plugins/dsh-dafeiyu/mood"),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
         if let value = object["hunger"] as? Double { hunger = min(1, max(0, value)) }
         petView.needsDisplay = true
+    }
+
+    // 外观进化：Lv.1 光晕，Lv.2 星点，Lv.3 头顶光环，Lv.4 金色柔光
+    func drawEvolution(in bounds: NSRect) {
+        guard evoLevel > 0 else { return }
+        let center = NSPoint(x: bounds.midX, y: bounds.height * 0.42)
+        let baseRadius = bounds.height * 0.30
+        let glow = NSBezierPath(ovalIn: NSRect(x: center.x - baseRadius, y: center.y - baseRadius * 0.8,
+                                               width: baseRadius * 2, height: baseRadius * 1.6))
+        let color = evoLevel >= 4
+            ? NSColor(calibratedRed: 1.0, green: 0.83, blue: 0.45, alpha: 0.18)
+            : NSColor(calibratedRed: 0.55, green: 0.75, blue: 1.0, alpha: 0.16)
+        color.setFill()
+        glow.fill()
+
+        if evoLevel >= 2 {
+            sparkPhase += 0.06
+            for index in 0..<7 {
+                let angle = sparkPhase + Double(index) * (2 * Double.pi / 7)
+                let radius = baseRadius * (1.05 + 0.08 * sin(sparkPhase * 1.7 + Double(index)))
+                let x = center.x + CGFloat(cos(angle)) * radius
+                let y = center.y + CGFloat(sin(angle)) * radius * 0.8
+                let size: CGFloat = evoLevel >= 4 ? 7 : 5
+                let star = NSBezierPath(ovalIn: NSRect(x: x - size / 2, y: y - size / 2, width: size, height: size))
+                NSColor(calibratedRed: 1.0, green: 0.92, blue: 0.55, alpha: 0.75).setFill()
+                star.fill()
+            }
+        }
+
+        if evoLevel >= 3 {
+            let ringRect = NSRect(x: center.x - baseRadius * 0.55, y: bounds.height * 0.78,
+                                  width: baseRadius * 1.1, height: baseRadius * 0.36)
+            let ring = NSBezierPath(ovalIn: ringRect)
+            ring.lineWidth = 2.5
+            NSColor(calibratedRed: 1.0, green: 0.85, blue: 0.4, alpha: 0.85).setStroke()
+            ring.stroke()
+        }
     }
 
     func watchDenoise() {

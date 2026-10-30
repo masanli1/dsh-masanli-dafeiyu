@@ -19,6 +19,7 @@ import { registerTeslaTool, listSkills, TESLA_CLI, VOICE_CLI, VOICES_DIR } from 
 import { registerBilibiliTool } from './bilibili.js'
 import { createRoutineStore, registerRoutineTool } from './routine.js'
 import { createEnglishStore, registerEnglishTool } from './english.js'
+import { createEvolutionStore, registerEvolutionTool } from './evolution.js'
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { existsSync as fileExists, readFileSync as readFileSyncImpl, readdirSync as readdirSyncImpl } from 'node:fs'
@@ -709,6 +710,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       try {
         mood.poke('chat')
         try { config.routine?.record?.('chat') } catch {}
+        try { config.evolution?.addXp?.(1) } catch {}
         if (PRAISE.test(text)) mood.poke('praise')
         else if (FEED.test(text)) mood.poke('feed')
         if (config.memoryStore && text) {
@@ -916,6 +918,17 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({
           kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/evolution',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            try { jsonResponse(res, 200, config.evolution?.snapshot?.() ?? {}) } catch (error) { jsonResponse(res, 500, { error: String(error?.message ?? error) }) }
+          },
+        }),
+        'dsh-dafeiyu: evolution',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
           path: '/plugins/dsh-dafeiyu/mood',
           handler: async (req, res) => {
             if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
@@ -932,6 +945,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
               const kind = action === 'feed' ? 'feed' : action === 'play' ? 'play' : action === 'praise' ? 'praise' : 'seen'
               const next = mood.poke(kind)
               try { config.routine?.record?.('mood') } catch {}
+              try { config.evolution?.addXp?.(kind === 'praise' ? 3 : kind === 'feed' ? 2 : 1) } catch {}
               if (kind === 'praise') noteLife('被夸', '今天被夸了，心情很好')
               if (kind === 'feed') noteLife('吃饭', '吃了一碗白饭')
               if (MOOD_TEXT[kind]) pulse(pickOne(MOOD_TEXT[kind]))
@@ -1337,9 +1351,15 @@ export function apply(ctx, config = {}) {
   // so Loader's fiber-scoped volatile updates reach them.
   const routine = createRoutineStore({ logger })
   const english = createEnglishStore({ logger })
+  const evolution = createEvolutionStore({ logger })
+  try {
+    const result = evolution.addXp(10)
+    if (result.evolved) logger.info?.(`dsh-dafeiyu 进化：${result.before.name} → ${result.after.name}`)
+  } catch {}
+  try { registerEvolutionTool(ctx, { evolution, logger }) } catch (error) { logger.error?.(`进化工具挂载失败: ${error?.message ?? error}`) }
   try { registerRoutineTool(ctx, { routine, logger }) } catch (error) { logger.error?.(`作息工具挂载失败: ${error?.message ?? error}`) }
   try { registerEnglishTool(ctx, { english, logger }) } catch (error) { logger.error?.(`英语工具挂载失败: ${error?.message ?? error}`) }
-  mount(ctx, { ...config, novelRootResolved: novelRoot, memoryStore: memory, routine, english })
+  mount(ctx, { ...config, novelRootResolved: novelRoot, memoryStore: memory, routine, english, evolution })
   // 降噪能力随伴侣一起安装：denoise_audio 工具（NPSS 核心，本地 CPU）。
   try {
     registerDenoiseTool(ctx, logger)
