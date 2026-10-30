@@ -694,8 +694,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let ringRect = NSRect(x: center.x - baseRadius * 0.55, y: bounds.height * 0.78,
                                   width: baseRadius * 1.1, height: baseRadius * 0.36)
             let ring = NSBezierPath(ovalIn: ringRect)
-            ring.lineWidth = 2.5
-            NSColor(calibratedRed: 1.0, green: 0.85, blue: 0.4, alpha: 0.85).setStroke()
+            ring.lineWidth = 1.6
+            NSColor(calibratedRed: 1.0, green: 0.87, blue: 0.45, alpha: 0.55).setStroke()
             ring.stroke()
         }
     }
@@ -708,29 +708,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let flash = max(0, sin(now * 2.1))            // 0..1 呼吸式闪光
         let burst = pow(max(0, sin(now * 0.9)), 6)     // 每 ~3.5 秒一次强劈
 
-        // 0) 暗紫底幕，让光效更醒（只在她周围一圈）
-        let auraRect = NSRect(x: bounds.midX - bounds.width * 0.40, y: bounds.height * 0.02,
-                              width: bounds.width * 0.80, height: bounds.height * 0.72)
-        let aura = NSBezierPath(ovalIn: auraRect)
-        NSColor(calibratedRed: 0.10, green: 0.05, blue: 0.22, alpha: 0.62 + 0.10 * flash).setFill()
-        aura.fill()
-
-        // 1) 深紫径向底光
-        if let gradient = NSGradient(colors: [
-            NSColor(calibratedRed: 0.45, green: 0.25, blue: 0.95, alpha: 0.30 + 0.12 * flash),
-            NSColor(calibratedRed: 0.20, green: 0.10, blue: 0.45, alpha: 0.10),
-            NSColor(calibratedWhite: 0, alpha: 0),
-        ] as [NSColor]) {
-            let center = NSPoint(x: bounds.midX, y: bounds.height * 0.45)
-            let radius = bounds.height * 0.55
-            gradient.draw(fromCenter: center, radius: 0, toCenter: center, radius: radius, options: [])
+        // 1) 三层径向柔光：中心亮、边缘完全透明（没有硬边圆圈）
+        let center = NSPoint(x: bounds.midX, y: bounds.height * 0.46)
+        let layers: [(CGFloat, CGFloat, NSColor)] = [
+            (0.30, 0.35, NSColor(calibratedRed: 0.42, green: 0.22, blue: 0.90, alpha: 0.22 + 0.06 * flash)),
+            (0.55, 0.16, NSColor(calibratedRed: 0.35, green: 0.18, blue: 0.75, alpha: 0.16 + 0.05 * flash)),
+            (0.85, 0.05, NSColor(calibratedRed: 0.30, green: 0.15, blue: 0.65, alpha: 0.10)),
+        ]
+        for (ratio, alpha, color) in layers {
+            let radius = bounds.height * ratio * (1.0 + 0.03 * sin(now * 1.6))
+            if let gradient = NSGradient(colors: [
+                color.withAlphaComponent(alpha),
+                color.withAlphaComponent(alpha * 0.4),
+                NSColor(calibratedWhite: 0, alpha: 0),
+            ] as [NSColor]) {
+                gradient.draw(fromCenter: center, radius: 0, toCenter: center, radius: radius, options: [])
+            }
         }
 
         let slashing = currentClip == "slash"
         // 2) 斜向刀光：从右下到左上的一道光刃（挥刀动画期间交给帧动画）
         let bladeStart = NSPoint(x: bounds.midX - bounds.width * 0.62, y: bounds.height * 0.05)
         let bladeEnd = NSPoint(x: bounds.midX + bounds.width * 0.62, y: bounds.height * 0.92)
-        if !slashing {
+        if !slashing && burst > 0.2 {
         let blade = NSBezierPath()
         blade.move(to: bladeStart)
         blade.line(to: bladeEnd)
@@ -751,12 +751,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         arc.appendArc(withCenter: NSPoint(x: bounds.midX + bounds.width * 0.10, y: bounds.height * 0.42),
                       radius: bounds.width * 0.52, startAngle: 118, endAngle: 236, clockwise: false)
         arc.lineWidth = 5 + 16 * burst
-        NSColor(calibratedRed: 0.85, green: 0.70, blue: 1.0, alpha: 0.35 + 0.45 * burst).setStroke()
-        arc.stroke()
+        if burst > 0.25 {
+            NSColor(calibratedRed: 0.85, green: 0.70, blue: 1.0, alpha: 0.30 + 0.55 * burst).setStroke()
+            arc.stroke()
+        }
         }
 
-        // 3) 紫色闪电（每帧重新抖动）
+        // 3) 紫色闪电（只在爆闪瞬间）
         var seed = UInt64(now * 12) &* 6364136223846793005 &+ 1442695040888963407
+        if burst > 0.15 {
         for _ in 0..<3 {
             let path = NSBezierPath()
             var point = NSPoint(x: CGFloat.random(in: bounds.minX...bounds.maxX), y: bounds.maxY)
@@ -771,6 +774,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             path.lineWidth = 1.4
             NSColor(calibratedRed: 0.85, green: 0.7, blue: 1.0, alpha: 0.5 + 0.4 * flash).setStroke()
             path.stroke()
+        }
         }
 
         // 4) 环绕碎片
