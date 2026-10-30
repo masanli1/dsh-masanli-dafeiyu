@@ -350,6 +350,8 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   const eventStream = createEventStream()
   const settings = createSettingsScope(ctx, Config, config, publicConfig)
   const mood = createMoodStore({ logger })
+  const initialMood = mood.snapshot()
+  if (!initialMood.met) { try { mood.poke('seen') } catch {} }
   mood.tick()
   const moodTimer = setInterval(() => { try { mood.tick() } catch {} }, 5 * 60 * 1000)
   if (typeof moodTimer.unref === 'function') moodTimer.unref()
@@ -476,11 +478,13 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       child.unref()
       logger.info?.(`dsh-dafeiyu: 降噪全部完成，播放 ${track}`)
       pulse('降噪全部完成啦，放首歌庆祝一下～')
+      noteLife('降噪', '把一整批视频的降噪跑完了')
     } catch (error) {
       logger.warn?.(`dsh-dafeiyu 庆祝失败: ${error?.message ?? error}`)
     }
   }
 
+  try { if (!initialMood.met) noteLife('见面', '第一次和主人见面') } catch {}
   try { startDenoiseWatch() } catch (error) { logger.warn?.(`dsh-dafeiyu 降噪监视器启动失败: ${error?.message ?? error}`) }
 
   let activeTurns = 0
@@ -526,6 +530,21 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
         volume: Number(live?.voiceVolume ?? 0.9),
         preset: live?.voiceShaping === true ? asString(live?.voicePreset, '') : '',
       })
+    } catch {}
+  }
+
+  // 生活记忆：把"发生过的事"写进长期记忆，按天去重，同类一天只记一条。
+  const lifeLogged = new Map()
+  const noteLife = (kind, text) => {
+    try {
+      const store = config.memoryStore
+      if (!store) return
+      const day = new Date().toISOString().slice(0, 10)
+      const stamp = `${day} ${kind}`
+      if (lifeLogged.get(kind) === day) return
+      lifeLogged.set(kind, day)
+      store.add(stamp, text)
+      logger.info?.(`dsh-dafeiyu 生活记忆: ${stamp} = ${text}`)
     } catch {}
   }
 
@@ -908,6 +927,8 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
               const action = String(body.action ?? '')
               const kind = action === 'feed' ? 'feed' : action === 'play' ? 'play' : action === 'praise' ? 'praise' : 'seen'
               const next = mood.poke(kind)
+              if (kind === 'praise') noteLife('被夸', '今天被夸了，心情很好')
+              if (kind === 'feed') noteLife('吃饭', '吃了一碗白饭')
               if (MOOD_TEXT[kind]) pulse(pickOne(MOOD_TEXT[kind]))
               else if (action === 'tick' && MOOD_TEXT[next.mood === '想你' ? 'missing' : next.mood === '饿' ? 'hungry' : next.mood === '困' ? 'sleepy' : 'happy']) {
                 pulse(pickOne(MOOD_TEXT[next.mood === '想你' ? 'missing' : next.mood === '饿' ? 'hungry' : next.mood === '困' ? 'sleepy' : 'happy']))
