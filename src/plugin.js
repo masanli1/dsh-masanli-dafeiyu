@@ -974,6 +974,22 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({
           kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/emote',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            const clip = new URL(req.url ?? '/', 'http://127.0.0.1').searchParams.get('clip') ?? ''
+            if (!clip) return jsonResponse(res, 400, { error: '缺少 clip' })
+            try {
+              bridge?.send(createMessage(CompanionMessageKind.EMOTE, { clip }))
+              jsonResponse(res, 200, { ok: true, clip })
+            } catch (error) { jsonResponse(res, 500, { error: String(error?.message ?? error) }) }
+          },
+        }),
+        'dsh-dafeiyu: emote',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
           path: '/plugins/dsh-dafeiyu/preview',
           handler: (req, res) => {
             if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })

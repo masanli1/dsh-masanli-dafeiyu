@@ -1060,3 +1060,9 @@ Lv.4 不再只是光晕，而是一整套「劈刀」演出（每帧程序化绘
 
 `POST /plugins/dsh-dafeiyu/preview?seconds=1.4`：让原生助手按字母序把**所有动作**挨个播放一遍，
 每个动作上方气泡显示名字，方便逐个查看。
+
+## 整段学习 + 原声（chat.105）
+
+- `learn-pose.py` 支持 `--window full --out-fps 12`：把整段视频（77s）学成一个长动作；
+- 新增 `POST /plugins/dsh-dafeiyu/emote?clip=raiden_full` 直接播放指定动作；
+- 播放 `raiden_full` 时会用 **afplay 同步播放原视频音轨**（`~/.dsh/dsh-dafeiyu/effects/audio/raiden_full.m4a`）。

@@ -49,6 +49,8 @@ def main():
     parser.add_argument('--intensity', type=float, default=1.0)
     parser.add_argument('--window', default='auto')
     parser.add_argument('--fps', type=float, default=10.0)
+    parser.add_argument('--out-fps', type=float, default=12.0)
+    parser.add_argument('--max-frames', type=int, default=1200)
     args = parser.parse_args()
 
     import cv2
@@ -134,7 +136,7 @@ def main():
     base = [Image.open(os.path.join(base_dir, f)).convert('RGBA')
             for f in sorted(os.listdir(base_dir)) if f.endswith('.webp')]
 
-    out_frames = 48
+    out_frames = max(48, min(args.max_frames, int(len(window) / args.fps * args.out_fps)))
     out = []
     n = len(window)
     for i in range(out_frames):
@@ -167,7 +169,7 @@ def main():
     manifest = json.load(open(MANIFEST))
     manifest['clips'][args.name] = {
         'frames': [f'{args.name}/{args.name}_{i:03d}.webp' for i in range(1, len(out) + 1)],
-        'frameMs': 70,
+        'frameMs': int(round(1000 / args.out_fps)),
         'loop': True,
         'source': 'learned:pose',
     }

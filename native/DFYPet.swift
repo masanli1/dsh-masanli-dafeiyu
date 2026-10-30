@@ -586,6 +586,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func playReaction(_ name: String) {
         guard clips[name] != nil else { return }
+        // 长动作（学来的整段视频）配原声
+        let audio = NSHomeDirectory() + "/.dsh/dsh-dafeiyu/effects/audio/\(name).m4a"
+        if FileManager.default.fileExists(atPath: audio) {
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/afplay")
+            task.arguments = ["-v", "0.6", audio]
+            try? task.run()
+        }
         oneShotClip = name
         currentClip = name
         frameIndex = 0
