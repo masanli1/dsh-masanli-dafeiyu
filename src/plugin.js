@@ -17,6 +17,8 @@ import { createMoodStore } from './mood.js'
 import { rememberFacts, extractFacts } from './memory-auto.js'
 import { registerTeslaTool, listSkills, TESLA_CLI, VOICE_CLI, VOICES_DIR } from './tesla.js'
 import { registerBilibiliTool } from './bilibili.js'
+import { createRoutineStore, registerRoutineTool } from './routine.js'
+import { createEnglishStore, registerEnglishTool } from './english.js'
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { existsSync as fileExists, readFileSync as readFileSyncImpl, readdirSync as readdirSyncImpl } from 'node:fs'
@@ -485,6 +487,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   }
 
   try { if (!initialMood.met) noteLife('见面', '第一次和主人见面') } catch {}
+  try { config.routine?.record?.('start') } catch {}
   try { startDenoiseWatch() } catch (error) { logger.warn?.(`dsh-dafeiyu 降噪监视器启动失败: ${error?.message ?? error}`) }
 
   let activeTurns = 0
@@ -705,6 +708,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       } catch { text = '' }
       try {
         mood.poke('chat')
+        try { config.routine?.record?.('chat') } catch {}
         if (PRAISE.test(text)) mood.poke('praise')
         else if (FEED.test(text)) mood.poke('feed')
         if (config.memoryStore && text) {
@@ -927,6 +931,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
               const action = String(body.action ?? '')
               const kind = action === 'feed' ? 'feed' : action === 'play' ? 'play' : action === 'praise' ? 'praise' : 'seen'
               const next = mood.poke(kind)
+              try { config.routine?.record?.('mood') } catch {}
               if (kind === 'praise') noteLife('被夸', '今天被夸了，心情很好')
               if (kind === 'feed') noteLife('吃饭', '吃了一碗白饭')
               if (MOOD_TEXT[kind]) pulse(pickOne(MOOD_TEXT[kind]))
@@ -1330,7 +1335,11 @@ export function apply(ctx, config = {}) {
   const memory = createMemoryStore({ logger })
   // Settings is already a declared dependency. Keep observers on this fiber
   // so Loader's fiber-scoped volatile updates reach them.
-  mount(ctx, { ...config, novelRootResolved: novelRoot, memoryStore: memory })
+  const routine = createRoutineStore({ logger })
+  const english = createEnglishStore({ logger })
+  try { registerRoutineTool(ctx, { routine, logger }) } catch (error) { logger.error?.(`作息工具挂载失败: ${error?.message ?? error}`) }
+  try { registerEnglishTool(ctx, { english, logger }) } catch (error) { logger.error?.(`英语工具挂载失败: ${error?.message ?? error}`) }
+  mount(ctx, { ...config, novelRootResolved: novelRoot, memoryStore: memory, routine, english })
   // 降噪能力随伴侣一起安装：denoise_audio 工具（NPSS 核心，本地 CPU）。
   try {
     registerDenoiseTool(ctx, logger)
