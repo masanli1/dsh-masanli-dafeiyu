@@ -366,6 +366,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var evoStage: String = "初生"
     var sparkPhase: Double = 0
     var ultimateStart: Date? = nil
+    var ultimateFrames: [NSImage] = []
     var voiceName = "Tingting"
     var voiceRate = 170
     var feedButtonRect: NSRect = .zero
@@ -438,6 +439,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.currentClip = "ultimate"; self.frameIndex = 0; self.startUltimate()
             }
         }
+        loadUltimateFrames()
         if let forced = ProcessInfo.processInfo.environment["DSH_DAFEIYU_FORCE_CLIP"], clips[forced] != nil {
             currentClip = forced
             frameIndex = 0
@@ -831,6 +833,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if elapsed > duration { ultimateStart = nil; return }
         let t = elapsed / duration
 
+        if !ultimateFrames.isEmpty, ProcessInfo.processInfo.environment["DSH_DAFEIYU_USE_FX_FRAMES"] == "1" {
+            let fps = 12.0
+            let index = min(ultimateFrames.count - 1, Int(elapsed * fps))
+            let frame = ultimateFrames[index]
+            let fade = elapsed > 3.0 ? max(0, 1 - (elapsed - 3.0)) : 1
+            frame.draw(in: bounds, from: .zero, operation: .screen, fraction: min(1, fade))
+            petView.needsDisplay = true
+            return
+        }
+
         // 1) 全屏闪白（一闪那一刻最亮）
         let flash = t < 0.45 ? max(0, 1 - abs(t - 0.30) / 0.18) : 0
         if flash > 0 {
@@ -852,6 +864,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSColor(calibratedRed: 0.85, green: 0.72, blue: 1.0, alpha: rayAlpha).setStroke()
                 path.stroke()
             }
+        }
+
+        // 2.8) 魔法阵：两圈反向旋转的圆环 + 刻度
+        let ringRadius = bounds.width * (0.34 + 0.02 * sin(t * 6))
+        for (offset, speed, alpha) in [(0.0, 0.6, 0.55), (12.0, -0.9, 0.35)] as [(Double, Double, Double)] {
+            let r = ringRadius + CGFloat(offset)
+            let ring = NSBezierPath(ovalIn: NSRect(x: cx - r, y: cy - r * 0.8, width: r * 2, height: r * 1.6))
+            ring.lineWidth = 1.4
+            NSColor(calibratedRed: 0.80, green: 0.62, blue: 1.0, alpha: alpha * (1 - t * 0.6)).setStroke()
+            ring.stroke()
+        }
+        for index in 0..<24 {
+            let angle = Double(index) * (2 * Double.pi / 24) + now * 0.6
+            let r1 = ringRadius * 1.02
+            let r2 = ringRadius * (index % 3 == 0 ? 1.14 : 1.08)
+            let tick = NSBezierPath()
+            tick.move(to: NSPoint(x: cx + CGFloat(cos(angle)) * r1, y: cy + CGFloat(sin(angle)) * r1 * 0.8))
+            tick.line(to: NSPoint(x: cx + CGFloat(cos(angle)) * r2, y: cy + CGFloat(sin(angle)) * r2 * 0.8))
+            tick.lineWidth = index % 3 == 0 ? 2.4 : 1.2
+            NSColor(calibratedRed: 0.86, green: 0.72, blue: 1.0, alpha: 0.65 * (1 - t * 0.5)).setStroke()
+            tick.stroke()
         }
 
         // 3) 横扫的新月刀光：从右扫到左
@@ -889,6 +922,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 path.stroke()
             }
         }
+    }
+
+    func loadUltimateFrames() {
+        let dir = NSHomeDirectory() + "/.dsh/dsh-dafeiyu/effects/ultimate"
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir) else { return }
+        ultimateFrames = names.filter { $0.hasSuffix(".png") }.sorted().compactMap { NSImage(contentsOfFile: dir + "/" + $0) }
     }
 
     func watchDenoise() {
