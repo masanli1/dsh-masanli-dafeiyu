@@ -833,12 +833,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if elapsed > duration { ultimateStart = nil; return }
         let t = elapsed / duration
 
-        if !ultimateFrames.isEmpty, ProcessInfo.processInfo.environment["DSH_DAFEIYU_USE_FX_FRAMES"] == "1" {
+        if !ultimateFrames.isEmpty {
             let fps = 12.0
             let index = min(ultimateFrames.count - 1, Int(elapsed * fps))
             let frame = ultimateFrames[index]
             let fade = elapsed > 3.0 ? max(0, 1 - (elapsed - 3.0)) : 1
-            frame.draw(in: bounds, from: .zero, operation: .screen, fraction: min(1, fade))
+            let petArea = NSRect(x: 0, y: 0, width: bounds.width, height: min(bounds.height, 344))
+            // 叠两遍，让特效更亮一些
+            frame.draw(in: petArea, from: .zero, operation: .screen, fraction: min(1, fade))
+            frame.draw(in: petArea, from: .zero, operation: .screen, fraction: min(1, fade) * 0.8)
             petView.needsDisplay = true
             return
         }
