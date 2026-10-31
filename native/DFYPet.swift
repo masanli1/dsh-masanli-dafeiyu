@@ -24,7 +24,19 @@ final class PetView: NSView {
                                 width: size.width,
                                 height: size.height)
             // 学来的出场视角：终极技期间按镜头参数缩放并下移（仰视感）
-            if let context = NSGraphicsContext.current?.cgContext, app.cameraScale != 1 || app.cameraOffsetY != 0 {
+            if let context = NSGraphicsContext.current?.cgContext, abs(app.tiltX) > 0.01 || abs(app.tiltY) > 0.01 {
+                context.saveGState()
+                // 以底部中点为轴：鼠标在右→身体向右转（横向压缩 + 反向位移）
+                let pivotX = bounds.midX
+                let pivotY: CGFloat = 0
+                context.translateBy(x: pivotX, y: pivotY)
+                context.rotate(by: app.tiltX * 0.06)
+                let squeeze = 1 - abs(app.tiltX) * 0.05
+                context.scaleBy(x: squeeze, y: 1 + app.tiltY * 0.02)
+                context.translateBy(x: -pivotX, y: -pivotY)
+                image.draw(in: target)
+                context.restoreGState()
+            } else if let context = NSGraphicsContext.current?.cgContext, app.cameraScale != 1 || app.cameraOffsetY != 0 {
                 context.saveGState()
                 context.translateBy(x: bounds.midX, y: bounds.midY + app.cameraOffsetY)
                 context.scaleBy(x: app.cameraScale, y: app.cameraScale)
@@ -68,6 +80,16 @@ final class PetView: NSView {
 
     override func mouseMoved(with event: NSEvent) {
         app?.showCard(seconds: 3)
+        let local = convert(event.locationInWindow, from: nil)
+        let nx = (local.x - bounds.midX) / (bounds.width / 2)
+        let ny = (local.y - bounds.height * 0.5) / (bounds.height / 2)
+        app?.tiltTargetX = max(-1, min(1, nx))
+        app?.tiltTargetY = max(-1, min(1, ny))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        app?.tiltTargetX = 0
+        app?.tiltTargetY = 0
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -380,6 +402,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var ultimateFrames: [NSImage] = []
     var scenePlate: NSImage? = nil
     var sceneParams: [String: Any] = [:]
+    var tiltTargetX: CGFloat = 0
+    var tiltTargetY: CGFloat = 0
+    var tiltX: CGFloat = 0
+    var tiltY: CGFloat = 0
     var cameraScale: CGFloat = 1
     var cameraOffsetY: CGFloat = 0
     var previewQueue: [String] = []
@@ -536,6 +562,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if bubbleVisible && Date() > bubbleUntil { bubbleVisible = false }
         if cardVisible && Date() > cardHideAt { cardVisible = false }
+        // 2.5D：鼠标靠近时轻微俯仰/偏转，离开回正
+        let ease: CGFloat = 0.18
+        tiltX += (tiltTargetX - tiltX) * ease
+        tiltY += (tiltTargetY - tiltY) * ease
+        if abs(tiltX) < 0.002 { tiltX = 0 }
+        if abs(tiltY) < 0.002 { tiltY = 0 }
         if !previewQueue.isEmpty, Date().timeIntervalSince(previewAt) >= previewSeconds {
             previewAt = Date()
             advancePreview()
