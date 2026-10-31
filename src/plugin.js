@@ -30,6 +30,7 @@ import { createPermMemory, registerPermMemoryTool } from './perm-memory.js'
 import { createSkillStore, registerSkillTool } from './skills.js'
 import { createGoldbachMemory, registerGoldbachTool } from './goldbach-memory.js'
 import { createMus, registerMusTool } from './mus.js'
+import { createMeta, registerMetaTool } from './meta.js'
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { existsSync as fileExists, readFileSync as readFileSyncImpl, readdirSync as readdirSyncImpl } from 'node:fs'
@@ -588,6 +589,18 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   if (typeof turnTimer.unref === 'function') turnTimer.unref()
 
   // 上层定时出令：有空且到点时，让 RL 挑一条指令交给 DSH
+  let lastMetaAt = 0
+  const metaTimer = setInterval(() => {
+    try {
+      if (Date.now() - lastMetaAt < 20 * 60000) return
+      lastMetaAt = Date.now()
+      for (const [name, target] of [['chat', config.policy], ['director', config.orderPolicy]]) {
+        if ((target?.exportHistory?.() ?? []).length >= 8) config.meta?.optimize?.(target, { name })
+      }
+    } catch {}
+  }, 60000)
+  if (typeof metaTimer.unref === 'function') metaTimer.unref()
+
   let lastDirectorAt = 0
   const directorTimer = setInterval(() => {
     try {
@@ -978,6 +991,17 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({ kind: 'exact', path: CHAT_TARGET_ENDPOINT, handler: chatHandlers.target }),
         'dsh-dafeiyu: local chat target endpoint',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/debug/meta',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            try { jsonResponse(res, 200, config.meta?.status?.() ?? {}) } catch (error) { jsonResponse(res, 500, { error: String(error?.message ?? error) }) }
+          },
+        }),
+        'dsh-dafeiyu: meta debug',
       )
       httpCtx.effect(
         () => httpCtx.webServer.register({
@@ -1707,6 +1731,8 @@ export function apply(ctx, config = {}) {
     logger,
   })
   const director = createDirector({ ctx, policy: orderPolicy, goldbach, logger })
+  const meta = createMeta({ logger })
+  try { registerMetaTool(ctx, { meta, policies: { chat: policy, director: orderPolicy }, logger }) } catch (error) { logger.error?.(`元优化挂载失败: ${error?.message ?? error}`) }
   try { registerDirectorTool(ctx, { director, logger }) } catch (error) { logger.error?.(`调度台工具挂载失败: ${error?.message ?? error}`) }
   // 动作学习：从视频里学"小动作"，生成新的动作帧（scripts/learn-motion.py）
   const motionTool = {
@@ -1794,6 +1820,8 @@ export function apply(ctx, config = {}) {
     memoryStore: memory,
     policy,
     director,
+    meta,
+    orderPolicy,
     selfTool,
     permMemory,
     skills,

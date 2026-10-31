@@ -41,7 +41,7 @@ const hourBucket = (date = new Date()) => {
 }
 
 export function createPolicy({ path = RL_PATH, epsilon = 0.25, logger = console, actions = ACTIONS, hints = STYLE_HINT } = {}) {
-  let data = { q: {}, counts: {}, plays: 0, epsilon, actions, hints }
+  let data = { q: {}, counts: {}, plays: 0, epsilon, alpha: 0.3, actions, hints, history: [] }
   try { data = { ...data, ...JSON.parse(readFileSync(path, 'utf8')) } } catch {}
 
   const save = () => {
@@ -72,7 +72,9 @@ export function createPolicy({ path = RL_PATH, epsilon = 0.25, logger = console,
     const previous = data.q[key] ?? 0
     data.counts[key] = (data.counts[key] ?? 0) + 1
     // 简单的指数滑动平均
-    data.q[key] = Number((previous + 0.3 * (reward - previous)).toFixed(4))
+    const alpha = Number.isFinite(data.alpha) ? data.alpha : 0.3
+    data.q[key] = Number((previous + alpha * (reward - previous)).toFixed(4))
+    data.history = [...(data.history ?? []), { context, action, reward }].slice(-600)
     save()
     return { key, before: previous, after: data.q[key] }
   }
@@ -101,7 +103,16 @@ export function createPolicy({ path = RL_PATH, epsilon = 0.25, logger = console,
     fillRate: Number((Object.keys(data.q).length / (48 * actions.length) * 100).toFixed(1)),
   })
 
-  return { choose, update, status, matrix, contextOf, path }
+  const exportHistory = () => [...(data.history ?? [])]
+  const applyHyper = ({ alpha, epsilon }) => {
+    if (Number.isFinite(alpha)) data.alpha = Math.min(0.9, Math.max(0.02, Number(alpha)))
+    if (Number.isFinite(epsilon)) data.epsilon = Math.min(0.6, Math.max(0.02, Number(epsilon)))
+    save()
+    return { alpha: data.alpha, epsilon: data.epsilon }
+  }
+  const hyper = () => ({ alpha: data.alpha ?? 0.3, epsilon: data.epsilon ?? 0.25 })
+
+  return { choose, update, status, matrix, contextOf, exportHistory, applyHyper, hyper, path }
 }
 
 const text = (value) => [{ type: 'text', text: value }]
