@@ -1,10 +1,5 @@
-// SAN 指纹熵（插件侧精简版，与 goldbach-memory 的 san-entropy.js 同算法）
-export function toCoordinates(text) {
-  const out = []
-  for (const ch of String(text ?? '')) out.push(ch.codePointAt(0) ?? 0)
-  return out
-}
-
+// SAN：对一组点采样哈密顿回路（每个点恰好走一次），每条回路一个 SAD，
+// 所有 SAD 构成分布（SAN）。这是"点集"的拓扑指纹，不是切窗口。
 export function sadSum(path) {
   if (!path || path.length < 2) return 0
   let max = -Infinity
@@ -15,38 +10,68 @@ export function sadSum(path) {
   return sum
 }
 
+function mulberry32(seed) {
+  let a = seed >>> 0
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0
+    let t = a
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
 function entropyOfCounts(counts) {
   let total = 0
-  for (const value of counts.values()) total += value
+  for (const value of counts) total += value
   if (!total) return 0
   let entropy = 0
-  for (const value of counts.values()) { const p = value / total; entropy -= p * Math.log2(p) }
+  for (const value of counts) {
+    if (!value) continue
+    const p = value / total
+    entropy -= p * Math.log2(p)
+  }
   return Number(entropy.toFixed(4))
 }
 
-// 文本 → SAN 指纹熵（窗口默认 6，实测在该尺度结构最丰富）
-export function sanEntropy(text, { window = 6 } = {}) {
-  const coords = Array.isArray(text) ? text : toCoordinates(text)
-  // 短文本自动缩小窗口，否则窗口内只有一条路径、熵恒为 0
-  const span = coords.length >= 2 * window ? window : Math.max(2, Math.floor(coords.length / 2))
-  if (coords.length < span + 1) return { entropy: 0, paths: 0, distinctSad: 0, window: span, short: true }
-  // 先收集 SAD，再分桶：不分桶的话几乎每个窗口都不同，熵会饱和成 log2(路径数)
-  const values = []
-  for (let i = 0; i + span <= coords.length; i += span) values.push(sadSum(coords.slice(i, i + span)))
-  const buckets = Math.min(32, Math.max(4, Math.ceil(Math.sqrt(values.length))))
-  const min = Math.min(...values)
-  const max = Math.max(...values)
-  const width = Math.max(1, (max - min) / buckets)
-  const counts = new Map()
-  for (const value of values) {
-    const bin = Math.min(buckets - 1, Math.floor((value - min) / width))
-    counts.set(bin, (counts.get(bin) ?? 0) + 1)
+// 点集 → SAN 统计量
+export function sanOf(values, { samples = 600, seed = 1, bins = 12 } = {}) {
+  const points = Array.isArray(values) ? values.slice() : toCoordinates(values)
+  const n = points.length
+  if (n < 4) return { n, samples: 0, colors: bins, entropy: 0, meanSad: 0, stdSad: 0, histogram: [] }
+  const random = mulberry32(seed)
+  const order = Array.from({ length: n }, (_, i) => i)
+  const sads = []
+  for (let i = 0; i < samples; i += 1) {
+    for (let k = n - 1; k > 0; k -= 1) {
+      const j = Math.floor(random() * (k + 1))
+      ;[order[k], order[j]] = [order[j], order[k]]
+    }
+    sads.push(sadSum(order.map((index) => points[index])))
   }
+  const mean = sads.reduce((sum, value) => sum + value, 0) / sads.length
+  const variance = sads.reduce((sum, value) => sum + (value - mean) ** 2, 0) / sads.length
+  const min = Math.min(...sads)
+  const max = Math.max(...sads)
+  const width = Math.max(1e-9, (max - min) / bins)
+  const counts = new Array(bins).fill(0)
+  for (const value of sads) counts[Math.min(bins - 1, Math.floor((value - min) / width))] += 1
   return {
+    n, samples: sads.length, bins,
     entropy: entropyOfCounts(counts),
-    paths: values.length,
-    distinctSad: new Set(values).size,
-    buckets,
-    window: span,
+    meanSad: Number(mean.toFixed(2)),
+    stdSad: Number(Math.sqrt(variance).toFixed(2)),
+    histogram: counts,
   }
+}
+
+export function toCoordinates(text) {
+  const out = []
+  for (const ch of String(text ?? '')) out.push(ch.codePointAt(0) ?? 0)
+  return out
+}
+
+// 兼容：文本 → 码点 → SAN
+export function sanEntropy(text, options = {}) {
+  return sanOf(Array.isArray(text) ? text : toCoordinates(text), options)
 }
