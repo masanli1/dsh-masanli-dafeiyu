@@ -26,6 +26,7 @@ import { createNotifier, registerNotifyTool } from './notify.js'
 import { createPolicy, registerRlTool } from './rl.js'
 import { createDirector, registerDirectorTool, ORDERS } from './director.js'
 import { createSelfTool, registerSelfTool } from './selftool.js'
+import { createPermMemory, registerPermMemoryTool } from './perm-memory.js'
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { existsSync as fileExists, readFileSync as readFileSyncImpl, readdirSync as readdirSyncImpl } from 'node:fs'
@@ -683,6 +684,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       if (lifeLogged.get(kind) === day) return
       lifeLogged.set(kind, day)
       store.add(stamp, text)
+      try { config.permMemory?.remember?.(stamp, text) } catch {}
       logger.info?.(`dsh-dafeiyu 生活记忆: ${stamp} = ${text}`)
     } catch {}
   }
@@ -972,6 +974,17 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({ kind: 'exact', path: CHAT_TARGET_ENDPOINT, handler: chatHandlers.target }),
         'dsh-dafeiyu: local chat target endpoint',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/debug/matrix-memory',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            try { jsonResponse(res, 200, config.permMemory?.stats?.() ?? {}) } catch (error) { jsonResponse(res, 500, { error: String(error?.message ?? error) }) }
+          },
+        }),
+        'dsh-dafeiyu: matrix memory debug',
       )
       httpCtx.effect(
         () => httpCtx.webServer.register({
@@ -1700,6 +1713,8 @@ export function apply(ctx, config = {}) {
   }
   if (typeof ctx.inject === 'function') ctx.inject(['tools'], registerMotion)
   else registerMotion(ctx)
+  const permMemory = createPermMemory({ logger })
+  try { registerPermMemoryTool(ctx, { memory: permMemory, logger }) } catch (error) { logger.error?.(`矩阵记忆挂载失败: ${error?.message ?? error}`) }
   const selfTool = createSelfTool({ logger })
   try { registerSelfTool(ctx, { selfTool, logger }) } catch (error) { logger.error?.(`复刻工具挂载失败: ${error?.message ?? error}`) }
   const notifier = createNotifier({ webhooks: Array.isArray(config.notifyWebhooks) ? config.notifyWebhooks : [], logger })
@@ -1718,6 +1733,7 @@ export function apply(ctx, config = {}) {
     policy,
     director,
     selfTool,
+    permMemory,
     routine,
     english,
     evolution,

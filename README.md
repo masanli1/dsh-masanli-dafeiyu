@@ -1101,3 +1101,23 @@ Lv.4 不再只是光晕，而是一整套「劈刀」演出（每帧程序化绘
 处理：
 1. 把 `~/.dsh/dsh-dafeiyu-chat.json` 里的 `dedicatedSessionId` 清空 → 自动新建会话（已执行）；
 2. 新增自动恢复：连续 2 次 `blocked` 就重置会话（`chat.reset()`）。
+
+## 矩阵记忆：逆序数编码（chat.110）
+
+`src/perm-memory.js`
+
+| 阶数 n | 容量 n! |
+|---|---|
+| 8 | 40,320 |
+| 10 | 3,628,800 |
+| 12 | 479,001,600 |
+| 14 | 87,178,291,200 |
+
+- 每条记忆 = 一个排列；**逆序数向量（Lehmer 码）就是它的轨迹**，
+  逐位展开就是"浪涌"过程，累计量记为 `surges`；
+- `unrank(rank, n)` / `rankOf(perm)` 双向可逆（已测往返一致）；
+- 写入：key → FNV-1a 哈希取排名，冲突线性探测；
+- 扩容：`expand(+2)` 阶数 +2，容量 ×90 以上，已有记忆重新编码；
+- 工具 `matrix-memory`（remember / recall / stats / expand / list），
+  端点 `GET /plugins/dsh-dafeiyu/debug/matrix-memory`；
+- 生活记忆（`noteLife`）会自动镜像写入矩阵。
