@@ -50,14 +50,16 @@ export function createCloneVoice({
     ])
 
   const probe = async (timeoutMs = 1200) => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
     try {
-      const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), timeoutMs)
-      await fetch(`${base}/`, { signal: controller.signal }).catch(() => null)
-      clearTimeout(timer)
+      // 服务在跑时 `/` 会返回 404，但连接是通的；连接被拒才是没起来。
+      await fetch(`${base}/`, { signal: controller.signal })
       return true
     } catch {
       return false
+    } finally {
+      clearTimeout(timer)
     }
   }
 

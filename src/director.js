@@ -14,6 +14,12 @@ export const ORDERS = [
   { id: 'routine_check', title: '作息建议', prompt: '【内部巡检】根据作息数据给一条作息建议，一句话，不要调用工具。' },
   { id: 'memory_tidy', title: '整理记忆', prompt: '【内部巡检】回顾长期记忆，指出一条值得记住或该忘掉的，一句话，不要调用工具。' },
   { id: 'idle_chat', title: '主动搭话', prompt: '【内部巡检】主动跟主人搭一句话，短、有性格，不要调用工具。' },
+  { id: 'plan_tomorrow', title: '计划明天', prompt: '【内部巡检】用一句话给明天提一个具体建议（作息或工作顺序），不要调用工具。' },
+  { id: 'self_review', title: '自我复盘', prompt: '【内部巡检】回顾最近几次巡检，指出一条可以做得更好的地方，一句话，不要调用工具。' },
+  { id: 'nas_check', title: '看看 NAS', prompt: '【内部巡检】检查 NAS 上降噪目录有没有新增待处理视频，用一句话汇报，不要调用工具。' },
+  { id: 'music_break', title: '放首歌', prompt: '【内部巡检】提议放一首歌休息一下，并说歌名风格，一句话，不要调用工具。' },
+  { id: 'review_words', title: '复习单词', prompt: '【内部巡检】挑一个最近学过的英语单词，用一句话复习它，不要调用工具。' },
+  { id: 'health_tip', title: '健康提醒', prompt: '【内部巡检】根据当前时间给一条健康提醒（喝水/起身/护眼），一句话，不要调用工具。' },
 ]
 
 const hourBucket = (date = new Date()) => {

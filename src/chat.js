@@ -391,7 +391,7 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
               : 0
           if (reward !== 0) policy.update(pendingChoice.context, pendingChoice.action, reward)
         }
-        const context = policy.contextOf(value)
+        const context = policy.contextOf(value, new Date(), false)
         const choice = policy.choose(context)
         pendingChoice = { context, action: choice.action }
         styleHint = policyHint(choice.action)

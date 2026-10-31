@@ -76,6 +76,13 @@ export function createWakeService({
     restarts: 0,
   }
 
+  let lock = Promise.resolve()
+  const withLock = (task) => {
+    const run = lock.then(task, task)
+    lock = run.then(() => {}, () => {})
+    return run
+  }
+
   const publish = (patch = {}) => {
     Object.assign(status, patch)
     try { onStatus({ ...status }) } catch {}
@@ -107,8 +114,8 @@ export function createWakeService({
     }
   }
 
-  const start = async () => {
-    if (child || stopping) return status
+  const startUnlocked = async () => {
+    if (child) return status
     const python = await findVoicePython({ logger })
     if (!python) {
       publish({ enabled: true, running: false, ready: false, lastError: '缺少语音运行时，请先运行 scripts/setup-voice.sh' })
@@ -161,8 +168,7 @@ export function createWakeService({
     return status
   }
 
-  const stop = () => {
-    stopping = true
+  const stopUnlocked = () => {
     if (restartTimer) { clearTimeout(restartTimer); restartTimer = null }
     const running = child
     child = null
@@ -173,11 +179,15 @@ export function createWakeService({
     publish({ running: false, ready: false, enabled: false })
   }
 
-  const restart = async () => {
-    stop()
+  const start = () => withLock(() => { stopping = false; return startUnlocked() })
+  const stop = () => withLock(() => { stopping = true; stopUnlocked(); return status })
+  const restart = () => withLock(async () => {
+    stopUnlocked()
+    // 等旧进程真的退出，别让两个守护进程抢同一个麦克风
+    await new Promise((resolve) => setTimeout(resolve, 400))
     stopping = false
-    return start()
-  }
+    return startUnlocked()
+  })
 
   return {
     start,

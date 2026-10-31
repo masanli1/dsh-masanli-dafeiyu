@@ -24,6 +24,11 @@ SENTENCES = [
     "This word is abnormal. It means something is not normal.",
     "Please read the sentence aloud one more time.",
     "He was embarrassed by the question, but he answered it.",
+    "The government announced a new policy on education.",
+    "She was accused of fraud and later cleared.",
+    "Our team needs a consistent strategy for the new market.",
+    "The amplifier made the sound much louder than before.",
+    "He apologized for being late to the meeting.",
 ]
 
 

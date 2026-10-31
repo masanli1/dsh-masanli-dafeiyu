@@ -104,7 +104,7 @@ export const Config = Schema.object({
   ttsEngine: Schema.union([
     Schema.const('say').description('系统语音（快，音色一般）'),
     Schema.const('clone').description('克隆音色（本机 GPT-SoVITS，慢一点但像原声）'),
-  ]).default('say').description('用哪种方式说话'),
+  ]).default('clone').description('用哪种方式说话'),
   ttsRefAudio: Schema.string().default('').description('克隆音色的参考音频（留空 = ~/Documents/大肥鱼声音/ref/teacher.wav）'),
   ttsPromptText: Schema.string().default('').description('参考音频对应的文本（留空 = 同目录的 teacher.txt）'),
   greetingEnabled: Schema.boolean().default(true).description('长时间没人理时主动打招呼'),
@@ -167,7 +167,7 @@ const defaults = Object.freeze({
   wakeEnabled: false,
   wakeKeyword: '大肥鱼',
   wakeReply: '在呢，我在听',
-  ttsEngine: 'say',
+  ttsEngine: 'clone',
   ttsRefAudio: '',
   ttsPromptText: '',
   greetingEnabled: true,
@@ -211,7 +211,7 @@ function publicConfig(config = {}) {
     wakeEnabled: config.wakeEnabled === true,
     wakeKeyword: asString(config.wakeKeyword, defaults.wakeKeyword),
     wakeReply: asString(config.wakeReply, defaults.wakeReply),
-    ttsEngine: config.ttsEngine === 'clone' ? 'clone' : 'say',
+    ttsEngine: config.ttsEngine === 'say' ? 'say' : 'clone',
     ttsRefAudio: asString(config.ttsRefAudio, ''),
     ttsPromptText: asString(config.ttsPromptText, ''),
     greetingEnabled: config.greetingEnabled !== false,
@@ -439,16 +439,23 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
     promptText: asString(settings.get()?.ttsPromptText, '') || readTextFile(joinPath(refDir, 'teacher.txt')),
   })
   // 统一出口：按设置决定用系统语音还是克隆音色，克隆失败自动回落。
+  // 克隆音色目前只会说英文（训练语料只有英文人声），中文句子直接走系统语音，
+  // 免得被当成英文单词念成乱码。
+  const CJK_TEXT = /[\u4e00-\u9fff]/
   const speakText = (text, options = {}) => {
     const live = settings.get()
     if (live.voiceEnabled === false) return false
-    if (live.ttsEngine === 'clone') {
+    if (live.ttsEngine === 'clone' && !CJK_TEXT.test(String(text ?? ''))) {
       cloneVoice.speak(text, { speed: Number(live.voiceRate ?? 170) / 170 })
         .then((ok) => { if (!ok) speaker.speak(text, options) })
         .catch(() => { try { speaker.speak(text, options) } catch {} })
       return true
     }
     return speaker.speak(text, options)
+  }
+  // 用克隆音色时提前把服务拉起来，第一句话就不必等模型加载
+  if (settings.get()?.ttsEngine !== 'say' && settings.get()?.voiceEnabled !== false) {
+    setTimeout(() => { cloneVoice.start().catch(() => {}) }, 3000).unref?.()
   }
   const syncCloneVoice = () => {
     const live = settings.get()

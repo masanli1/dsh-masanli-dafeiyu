@@ -6,23 +6,31 @@ import { dirname, join } from 'node:path'
 
 export const RL_PATH = join(homedir(), '.dsh', 'dsh-dafeiyu-rl.json')
 
-export const ACTIONS = ['tsundere', 'gentle', 'playful', 'brief']
+export const ACTIONS = ['tsundere', 'gentle', 'playful', 'brief', 'teasing', 'caring', 'curious', 'deadpan']
 export const STYLE_HINT = {
   tsundere: '这轮用更傲娇的语气：嘴硬、先怼一句再顺着说。',
   gentle: '这轮温柔一点：语气放松、多关心一句。',
   playful: '这轮活泼一点：可以开玩笑、用感叹号。',
   brief: '这轮简短一点：一句话说完。',
+  teasing: '这轮用调侃的语气：可以损他一句，但要笑着损。',
+  caring: '这轮关心他：问一句他累不累、要不要歇会儿。',
+  curious: '这轮多问一点：对他刚说的事表现出兴趣，追问一个细节。',
+  deadpan: '这轮冷淡一点：少用语气词，平静地回。',
 }
 
-const POSITIVE = /(可爱|好棒|厉害|喜欢你|真聪明|谢谢|爱你|哈哈|笑死|好玩|有意思)/
-const NEGATIVE = /(蠢|笨|傻|呆|无聊|没意思|讨厌|烦|不行|不对|闭嘴)/
+const POSITIVE = /(可爱|好棒|厉害|喜欢你|真聪明|谢谢|爱你|哈哈|笑死|好玩|有意思|不错|可以)/
+const NEGATIVE = /(蠢|笨|傻|呆|无聊|没意思|讨厌|烦|不行|不对|闭嘴|算了)/
 
+// 三档情绪：-1 负 / 0 中性 / +1 正
 export function sentimentOf(text) {
   const value = String(text ?? '')
   if (NEGATIVE.test(value)) return -1
   if (POSITIVE.test(value)) return 1
   return 0
 }
+
+const sentimentBucket = (value) => (value > 0 ? 'pos' : value < 0 ? 'neg' : 'neu')
+const dayBucket = (date = new Date()) => (date.getDay() === 0 || date.getDay() === 6 ? 'weekend' : 'workday')
 
 const hourBucket = (date = new Date()) => {
   const hour = date.getHours()
@@ -71,6 +79,7 @@ export function createPolicy({ path = RL_PATH, epsilon = 0.25, logger = console,
 
   const status = () => ({
     plays: data.plays,
+    matrix: matrix(),
     epsilon: Number(Math.max(0.05, data.epsilon * Math.pow(0.995, data.plays)).toFixed(3)),
     q: data.q,
     counts: data.counts,
@@ -80,7 +89,19 @@ export function createPolicy({ path = RL_PATH, epsilon = 0.25, logger = console,
       .map(([key, value]) => ({ key, value })),
   })
 
-  return { choose, update, status, contextOf: (text, date = new Date()) => `${hourBucket(date)}|${sentimentOf(text) >= 0 ? 'ok' : 'neg'}`, path }
+  // 状态空间：时段(4) × 情绪(3) × 工作/休息日(2) × 忙闲(2) = 48 个上下文
+  const contextOf = (text, date = new Date(), busy = false) =>
+    `${hourBucket(date)}|${sentimentBucket(sentimentOf(text))}|${dayBucket(date)}|${busy ? 'busy' : 'idle'}`
+
+  const matrix = () => ({
+    actions: actions.length,
+    contexts: new Set(Object.keys(data.q).map((key) => key.split('|').slice(0, 4).join('|'))).size,
+    capacity: 48 * actions.length,
+    filled: Object.keys(data.q).length,
+    fillRate: Number((Object.keys(data.q).length / (48 * actions.length) * 100).toFixed(1)),
+  })
+
+  return { choose, update, status, matrix, contextOf, path }
 }
 
 const text = (value) => [{ type: 'text', text: value }]

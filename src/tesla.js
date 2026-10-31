@@ -12,6 +12,8 @@ export const TESLA_CLI = join(here, '..', 'python', 'tesla', 'tesla_cli.py')
 export const VOICE_CLI = join(here, '..', 'python', 'tesla', 'voice_cli.py')
 export const VOICES_DIR = join(homedir(), 'Documents', '大肥鱼声音')
 export const SKILLS_DIR = join(homedir(), 'Documents', '大肥鱼技能')
+export const VOICE_REF_CLI = join(here, '..', 'python', 'voice', 'ref_from_wav.py')
+export const VOICE_TTS_PYTHON = join(homedir(), '.dsh', 'dsh-dafeiyu', 'voice', 'tts', 'bin', 'python')
 
 function runCli(python, args, { timeoutMs = 300000, script = TESLA_CLI, env = {} } = {}) {
   return new Promise((resolve, reject) => {
@@ -56,11 +58,13 @@ export function registerTeslaTool(ctx, { logger = console } = {}) {
       'action=replicate：复刻一个功能——给定目标数字，逐轮试阀（哪些边该开、该关、朝哪边），',
       '把能复现该结果的阀态存成一项学会的功能（默认 12 轮，约 10–30 秒）；',
       'action=use：用某项已学会的功能跑一个样本；action=skills：列出已学会的功能。',
+      'action=voice-clone：把一段人声做成「克隆音色」的参考（自动转写 + 裁到 6–8 秒），',
+      '之后在设置里选「克隆音色」就能用这个声音说话（GPT-SoVITS，本机运行）。',
     ].join(''),
     parameters: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['simulate', 'replicate', 'use', 'skills', 'program-record', 'program-fit', 'program-run', 'program-compile', 'programs', 'voice-learn', 'voice-speak', 'voices'] },
+        action: { type: 'string', enum: ['simulate', 'replicate', 'use', 'skills', 'program-record', 'program-fit', 'program-run', 'program-compile', 'programs', 'voice-learn', 'voice-clone', 'voice-speak', 'voices'] },
         sample: { type: 'integer', description: 'MNIST 测试样本序号（0–9999）' },
         target: { type: 'integer', description: 'replicate 时的目标数字 0–9' },
         name: { type: 'string', description: 'replicate 时给这项功能起的名' },
@@ -70,7 +74,7 @@ export function registerTeslaTool(ctx, { logger = console } = {}) {
         hidden: { type: 'integer', description: '隐藏塔数量（规模）：默认 64，程序更大就调大，如 128 / 256' },
         out: { type: 'integer', description: '出口塔数量：默认 24' },
         source: { type: 'string', description: '录制/拟合的起点：baseline、random、zero、技能名或程序名' },
-        wav: { type: 'string', description: 'voice-learn：要复刻的声音文件路径（wav/mp3/m4a…）' },
+        wav: { type: 'string', description: 'voice-learn：要复刻的声音文件路径（wav/mp3/m4a…）。注意：这是旧的 EQ 包络音色，真正的音色克隆用设置里的「说话方式 → 克隆音色」' },
         text: { type: 'string', description: 'voice-speak：要说的话' },
         spec: {
           type: 'object',
@@ -189,6 +193,27 @@ export function registerTeslaTool(ctx, { logger = console } = {}) {
           summary: items.length
             ? `已学会 ${items.length} 个音色：\n` + items.map((item) => `- ${item.name}（拟合 MSE ${item.mse ?? '—'}）`).join('\n')
             : '还没有学会任何音色',
+        }
+      }
+      if (args.action === 'voice-clone') {
+        const wav = String(args.wav ?? '').trim()
+        if (!wav) throw new Error('voice-clone 需要 wav 路径（可以是 mp3/m4a，会先转成 32k wav）')
+        const name = String(args.name ?? 'teacher').trim() || 'teacher'
+        const [result] = await runCli(VOICE_TTS_PYTHON, ['--wav', wav, '--name', name], {
+          script: VOICE_REF_CLI,
+          timeoutMs: 900000,
+          env: { HF_ENDPOINT: 'https://hf-mirror.com' },
+        })
+        if (!result?.ok) throw new Error(result?.error ?? '生成参考音频失败')
+        return {
+          ok: true,
+          ...result,
+          summary: [
+            `参考音频：${result.wav}（${result.seconds} 秒）`,
+            `参考文本：${result.text}`,
+            '',
+            '在设置 → 语音里把「参考音频」「参考文本」填成这两项，说话方式选「克隆音色」即可。',
+          ].join('\n'),
         }
       }
       if (args.action === 'voice-learn') {

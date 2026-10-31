@@ -15,6 +15,7 @@ batch 小、epoch 少，先拿到能听的结果。
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -53,6 +54,17 @@ def build_list(dataset, out_dir, name, speaker="teacher"):
                 continue
             audio = os.path.join(os.path.expanduser(dataset), item["audio"])
             text = str(item.get("text", "")).strip()
+            # 清洗：去掉对白破折号、多余空格；丢掉 OCR 没把握 / 太短 / 太长的
+            text = re.sub(r"^[-–—\s]+", "", text)
+            text = re.sub(r"\s+", " ", text).strip()
+            duration = float(item.get("duration") or 0)
+            confidence = float(item.get("ocrConfidence") or 0)
+            if confidence and confidence < 0.9:
+                continue
+            if duration < 1.5 or duration > 12:
+                continue
+            if len(text) < 12 or text[-1] not in ".!?":
+                continue
             if not os.path.isfile(audio) or not text:
                 continue
             key = os.path.basename(audio)
@@ -91,10 +103,9 @@ def base_env():
 
 
 def run_stage(script, env, name):
-    full = dict(os.environ)
-    full.update({key: str(value) for key, value in env.items()})
-    # prepare_datasets 里的脚本按「仓库根目录」运行，但 text/ 包在 GPT_SoVITS 下
+    # base_env 负责 PATH/PYTHONPATH；阶段参数逐个覆盖上去
     full = base_env()
+    full.update({key: str(value) for key, value in env.items()})
     print(f"→ {script}", flush=True)
     proc = subprocess.run([sys.executable, "-s", script], cwd=GSV_ROOT, env=full)
     if proc.returncode != 0:
