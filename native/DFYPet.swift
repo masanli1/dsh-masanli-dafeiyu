@@ -397,6 +397,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var hunger: Double = 0
     var evoLevel: Int = 0
     var evoStage: String = "初生"
+    var trainingPercent: Double = -1
+    var trainingPhase: String = ""
     var sparkPhase: Double = 0
     var ultimateStart: Date? = nil
     var ultimateFrames: [NSImage] = []
@@ -497,7 +499,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         fetchMood()
         fetchEvolution()
-        Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in self.fetchMood(); self.fetchEvolution() }
+        fetchTraining()
+        Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in self.fetchMood(); self.fetchEvolution(); self.fetchTraining() }
         Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in self.watchDenoise() }
         startStdin()
         respond("ready")
@@ -729,6 +732,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ("🍚 喂食" as NSString).draw(at: NSPoint(x: feedRect.minX + 10, y: feedRect.minY + 5), withAttributes: feedAttrs)
 
         if lastTasksText.isEmpty { lastTasksText = "空闲" }
+        if trainingPercent >= 0 {
+            let barRect = NSRect(x: card.minX + 14, y: card.minY + 30, width: card.width - 28, height: 4)
+            NSColor(calibratedWhite: 0.92, alpha: 1).setFill()
+            NSBezierPath(roundedRect: barRect, xRadius: 2, yRadius: 2).fill()
+            let filled = NSRect(x: barRect.minX, y: barRect.minY,
+                                width: max(2, barRect.width * CGFloat(min(100, max(0, trainingPercent)) / 100)),
+                                height: barRect.height)
+            NSColor(calibratedRed: 0.35, green: 0.65, blue: 1.0, alpha: 1).setFill()
+            NSBezierPath(roundedRect: filled, xRadius: 2, yRadius: 2).fill()
+        }
         if !lastTasksText.isEmpty {
             let rightAttrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 11.5),
@@ -738,6 +751,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let size = text.size(withAttributes: rightAttrs)
             text.draw(at: NSPoint(x: card.maxX - 16 - size.width, y: card.minY + 32), withAttributes: rightAttrs)
         }
+    }
+
+    func fetchTraining() {
+        let path = NSHomeDirectory() + "/.dsh/dsh-dafeiyu-training.json"
+        guard let data = FileManager.default.contents(atPath: path),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        trainingPercent = (object["percent"] as? Double) ?? -1
+        trainingPhase = (object["phase"] as? String) ?? ""
+        if let at = object["at"] as? Double, Date().timeIntervalSince1970 - at / 1000 > 600 {
+            trainingPercent = -1
+        }
+        petView.needsDisplay = true
     }
 
     func fetchEvolution() {
@@ -1130,6 +1155,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func statusDetail() -> String {
+        if trainingPercent >= 0 {
+            return String(format: "训练 %.0f%% · %@", trainingPercent, trainingPhase)
+        }
         if !denoiseProgress.isEmpty { return "DSH · " + denoiseProgress }
         return lastStateText.isEmpty ? "DSH · 等待下一次任务" : "DSH · " + lastStateText
     }
