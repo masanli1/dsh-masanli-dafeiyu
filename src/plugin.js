@@ -31,6 +31,7 @@ import { createSkillStore, registerSkillTool } from './skills.js'
 import { createGoldbachMemory, registerGoldbachTool } from './goldbach-memory.js'
 import { createMus, registerMusTool } from './mus.js'
 import { createMeta, registerMetaTool } from './meta.js'
+import { createCrtMemory, registerCrtTool } from './crt-memory.js'
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { existsSync as fileExists, readFileSync as readFileSyncImpl, readdirSync as readdirSyncImpl } from 'node:fs'
@@ -998,6 +999,17 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({
           kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/debug/crt',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            try { jsonResponse(res, 200, config.crt?.stats?.() ?? {}) } catch (error) { jsonResponse(res, 500, { error: String(error?.message ?? error) }) }
+          },
+        }),
+        'dsh-dafeiyu: crt debug',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
           path: '/plugins/dsh-dafeiyu/debug/meta',
           handler: (req, res) => {
             if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
@@ -1743,6 +1755,8 @@ export function apply(ctx, config = {}) {
       logger.info?.(`dsh-dafeiyu: 探索率应用为 ${rate}`)
     } catch (error) { logger.warn?.(`应用探索率失败: ${error?.message ?? error}`) }
   }, 3000)
+  const crt = createCrtMemory({ logger })
+  try { registerCrtTool(ctx, { crt, logger }) } catch (error) { logger.error?.(`CRT 编码挂载失败: ${error?.message ?? error}`) }
   const meta = createMeta({ logger })
   try { registerMetaTool(ctx, { meta, policies: { chat: policy, director: orderPolicy }, logger }) } catch (error) { logger.error?.(`元优化挂载失败: ${error?.message ?? error}`) }
   try { registerDirectorTool(ctx, { director, logger }) } catch (error) { logger.error?.(`调度台工具挂载失败: ${error?.message ?? error}`) }
@@ -1833,6 +1847,7 @@ export function apply(ctx, config = {}) {
     policy,
     director,
     meta,
+    crt,
     orderPolicy,
     selfTool,
     permMemory,
