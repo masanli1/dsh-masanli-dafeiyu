@@ -37,6 +37,7 @@ import { createChainStore, registerChainTool } from './chains.js'
 import { createDrive, registerDriveTool } from './drive.js'
 import { createLayers, registerLayerTool } from './layers.js'
 import { createStageLibrary, registerStageTool } from './stages.js'
+import { registerTurnTool } from './turns.js'
 import { createPerception, registerPerceptionTool } from './perception.js'
 import { createDistributed, registerDistTool } from './distributed.js'
 import { spawn } from 'node:child_process'
@@ -1909,6 +1910,7 @@ export function apply(ctx, config = {}) {
   }
   setTimeout(() => { ensureBridge().catch(() => {}) }, 5000)
   try { registerStageTool(ctx, { stages, logger }) } catch (error) { logger.error?.(`舞台库挂载失败: ${error?.message ?? error}`) }
+  try { registerTurnTool(ctx, { logger }) } catch (error) { logger.error?.(`转折检测挂载失败: ${error?.message ?? error}`) }
   const layers = createLayers({ chains, policy, config: {}, logger })
   try { registerLayerTool(ctx, { layers, logger }) } catch (error) { logger.error?.(`三层分工挂载失败: ${error?.message ?? error}`) }
   const drive = createDrive({ chains, logger })
