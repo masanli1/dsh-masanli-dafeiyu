@@ -30,12 +30,23 @@ export function sanEntropy(text, { window = 6 } = {}) {
   // 短文本自动缩小窗口，否则窗口内只有一条路径、熵恒为 0
   const span = coords.length >= 2 * window ? window : Math.max(2, Math.floor(coords.length / 2))
   if (coords.length < span + 1) return { entropy: 0, paths: 0, distinctSad: 0, window: span, short: true }
+  // 先收集 SAD，再分桶：不分桶的话几乎每个窗口都不同，熵会饱和成 log2(路径数)
+  const values = []
+  for (let i = 0; i + span <= coords.length; i += span) values.push(sadSum(coords.slice(i, i + span)))
+  const buckets = Math.min(32, Math.max(4, Math.ceil(Math.sqrt(values.length))))
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const width = Math.max(1, (max - min) / buckets)
   const counts = new Map()
-  let paths = 0
-  for (let i = 0; i + span <= coords.length; i += span) {
-    const sad = sadSum(coords.slice(i, i + span))
-    counts.set(sad, (counts.get(sad) ?? 0) + 1)
-    paths += 1
+  for (const value of values) {
+    const bin = Math.min(buckets - 1, Math.floor((value - min) / width))
+    counts.set(bin, (counts.get(bin) ?? 0) + 1)
   }
-  return { entropy: entropyOfCounts(counts), paths, distinctSad: counts.size, window: span }
+  return {
+    entropy: entropyOfCounts(counts),
+    paths: values.length,
+    distinctSad: new Set(values).size,
+    buckets,
+    window: span,
+  }
 }
