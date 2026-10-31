@@ -1843,7 +1843,20 @@ export function apply(ctx, config = {}) {
     { name: 'local', type: 'file', path: join(homedir(), '.dsh', 'dsh-dafeiyu-nodes', 'local') },
     { name: 'nas', type: 'file', path: '/Volumes/15226550291/大肥鱼记忆' },
   ]
-  const dist = createDistributed({ nodes: distNodes, shards: 4, logger })
+  // 分片是 AES 加密的；插件必须拿到同一把钥匙，否则会把密文当明文校验，误报 0/4
+  const readDistKey = () => {
+    try {
+      const { execFileSync } = require('node:child_process')
+      for (const kind of ['find-generic-password', 'find-internet-password']) {
+        try {
+          const value = execFileSync('/usr/bin/security', [kind, '-s', 'dsh-dafeiyu-dist', '-a', process.env.USER ?? 'ma', '-w'], { encoding: 'utf8' }).trim()
+          if (value) return Buffer.from(value, 'hex')
+        } catch {}
+      }
+    } catch {}
+    return null
+  }
+  const dist = createDistributed({ nodes: distNodes, shards: 4, encryptionKey: readDistKey(), logger })
   try { registerDistTool(ctx, { dist, logger }) } catch (error) { logger.error?.(`分布式存储挂载失败: ${error?.message ?? error}`) }
 
   const chains = createChainStore({ logger })
