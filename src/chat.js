@@ -70,7 +70,7 @@ export const PET_WORKSPACE = join(homedir(), 'Documents', '大肥鱼聊天')
 
 import { rememberFacts } from './memory-auto.js'
 
-export function createChatService({ ctx, logger = console, config = () => ({}), storePath = CHAT_STORE, memory, mood, emote, policy, perception, onUserMessage, onPlan, reasonHistory } = {}) {
+export function createChatService({ ctx, logger = console, config = () => ({}), storePath = CHAT_STORE, memory, mood, emote, policy, perception, onUserMessage, onPlan, reasonHistory, stageContext } = {}) {
   const sessions = new Map()
   let targetId
   let manualTarget = ''
@@ -250,6 +250,9 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
   }
 
   const state = async () => {
+    if (translatorMode() === 'local' && localMessages.length) {
+      return { sessionId: 'local', title: '和大肥鱼聊天（本地 7B）', busy: false, sessions: [], messages: localMessages.slice(-80), local: true }
+    }
     const id = await targetForUse()
     const list = await recentSessions()
     if (!id) {
@@ -354,6 +357,23 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
     }
   }
 
+  const localMessages = []
+  const translatorMode = () => {
+    try { return String(config()?.translator ?? 'dsh') } catch { return 'dsh' }
+  }
+
+  const callLocalTranslator = async (prompt, maxTokens = 160) => {
+    const response = await fetch('http://127.0.0.1:18732/generate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt, max_tokens: maxTokens, temp: 0.6 }),
+      signal: AbortSignal.timeout(60000),
+    })
+    if (!response.ok) throw new Error(`本地翻译器返回 ${response.status}`)
+    const data = await response.json()
+    return String(data.text ?? '').trim()
+  }
+
   let pendingChoice = null
   const policyHint = (action) => {
     const map = {
@@ -363,6 +383,16 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
       brief: '这轮尽量一句话说完。',
     }
     return map[action] ?? ''
+  }
+
+  const sendLocal = async (value) => {
+    const recall = await buildContext(value, '')
+    const prompt = `${recall}\n\n用户：${value}\n大肥鱼：`
+    localMessages.push({ role: 'user', text: value, at: Date.now() })
+    const answer = await callLocalTranslator(prompt, 200)
+    localMessages.push({ role: 'assistant', text: answer || '（本地翻译器没有输出）', at: Date.now() })
+    if (localMessages.length > 80) localMessages.splice(0, localMessages.length - 80)
+    return { accepted: true, sessionId: 'local', local: true }
   }
 
   const send = async (text) => {
@@ -389,6 +419,9 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
         if (result.added.length) logger.info?.(`dsh-dafeiyu 自动记忆: ${result.added.map((f) => f.key + '=' + f.value).join('、')}`)
       }
     } catch {}
+    if (translatorMode() === 'local') {
+      try { return await sendLocal(value) } catch (error) { logger.warn?.(`本地翻译器失败，回退到 DSH: ${error?.message ?? error}`) }
+    }
     rememberUser(value)
     // 思考链：回答前先记下"打算怎么答"
     try {

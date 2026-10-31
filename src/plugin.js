@@ -36,6 +36,7 @@ import { createTheory, registerTheoryTool } from './theory.js'
 import { createChainStore, registerChainTool } from './chains.js'
 import { createDrive, registerDriveTool } from './drive.js'
 import { createLayers, registerLayerTool } from './layers.js'
+import { createStageLibrary, registerStageTool } from './stages.js'
 import { createPerception, registerPerceptionTool } from './perception.js'
 import { createDistributed, registerDistTool } from './distributed.js'
 import { spawn } from 'node:child_process'
@@ -145,6 +146,10 @@ export const Config = Schema.object({
   musicPlaylist: Schema.string().default('~/Music/大肥鱼歌单').description('完成任务后播放的音乐目录'),
   memoryEnabled: Schema.boolean().default(true).description('跨会话长期记忆（偏好、常用路径等）'),
   contextInjection: Schema.boolean().default(true).description('聊天时自动附带工作会话摘要和长期记忆作为上下文'),
+  translator: Schema.union([
+    Schema.const('dsh').description('用 DSH 的模型说话（云端，质量高）'),
+    Schema.const('local').description('用本地 7B 说话（离线，质量低一档）'),
+  ]).default('dsh').description('谁来把记忆翻译成句子'),
   chatMode: Schema.union([
     Schema.const('dedicated').description('宠物专属会话（累积上下文）'),
     Schema.const('current').description('跟随当前会话'),
@@ -178,6 +183,7 @@ const defaults = Object.freeze({
   voiceName: 'Tingting',
   chatIdleSeconds: 15,
   explorationRate: 0.35,
+  translator: 'dsh',
   voiceShaping: false,
   voicePreset: '',
   voiceRate: 170,
@@ -223,6 +229,7 @@ function publicConfig(config = {}) {
     voiceName: config.voiceName ?? defaults.voiceName,
     chatIdleSeconds: Number.isFinite(config.chatIdleSeconds) ? config.chatIdleSeconds : defaults.chatIdleSeconds,
     explorationRate: Number.isFinite(config.explorationRate) ? config.explorationRate : defaults.explorationRate,
+    translator: config.translator === 'local' ? 'local' : 'dsh',
     voiceShaping: config.voiceShaping === true,
     voicePreset: asString(config.voicePreset, ''),
     voiceRate: Number.isFinite(config.voiceRate) ? config.voiceRate : defaults.voiceRate,
@@ -430,6 +437,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   const PRAISE = /(可爱|好乖|真棒|厉害|喜欢你|好看|漂亮|聪明|谢谢大肥鱼|辛苦了)/
   const FEED = /(吃饭|喂你|给你吃|零食|喝点)/
   const chat = createChatService({ ctx, logger, config: () => settings.get(), memory: config.memoryStore, mood, emote: config.emote, policy: config.policy, perception: config.perception, onUserMessage: config.onUserMessage,
+    stageContext: async (message) => (await config.stages?.contextForAsync?.(message)) ?? '',
     onPlan: (plan) => { try { config.chains?.add?.('think', { text: `打算回答「${plan.user}」：风格 ${plan.styleHint}`, relation: 'hypothesis' }) } catch {} },
     reasonHistory: (message) => {
       try {
@@ -1860,6 +1868,33 @@ export function apply(ctx, config = {}) {
     }
   }
 
+  const stages = createStageLibrary({ logger })
+  // 语义桥：由插件在用户会话里拉起（launchd 后台进程没有 Downloads 的 TCC 权限）
+  let bridgeChild = null
+  const ensureBridge = async () => {
+    try {
+      const health = await fetch('http://127.0.0.1:18731/health', { signal: AbortSignal.timeout(800) })
+      if (health.ok) return true
+    } catch {}
+    try {
+      const { spawn } = await import('node:child_process')
+      const python = join(homedir(), 'Downloads/dfy/3d-venv/bin/python')
+      const script = join(homedir(), 'Downloads/dfy/local-llm-memory/serve_embed.py')
+      bridgeChild = spawn(python, ['-u', script], {
+        detached: true,
+        stdio: 'ignore',
+        env: { ...process.env, HF_ENDPOINT: 'https://hf-mirror.com', DFY_PORT: '18731' },
+      })
+      bridgeChild.unref()
+      logger.info?.('dsh-dafeiyu: 已拉起语义桥（bge-small-zh）')
+      return true
+    } catch (error) {
+      logger.warn?.(`dsh-dafeiyu: 语义桥启动失败: ${error?.message ?? error}`)
+      return false
+    }
+  }
+  setTimeout(() => { ensureBridge().catch(() => {}) }, 5000)
+  try { registerStageTool(ctx, { stages, logger }) } catch (error) { logger.error?.(`舞台库挂载失败: ${error?.message ?? error}`) }
   const layers = createLayers({ chains, policy, config: {}, logger })
   try { registerLayerTool(ctx, { layers, logger }) } catch (error) { logger.error?.(`三层分工挂载失败: ${error?.message ?? error}`) }
   const drive = createDrive({ chains, logger })
@@ -1963,6 +1998,7 @@ export function apply(ctx, config = {}) {
     chains,
     drive,
     layers,
+    stages,
     runDirectorWithChain,
     perception,
     dist,

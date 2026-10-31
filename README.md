@@ -1421,3 +1421,21 @@ NeRF / 3DGS（NGRF 一类）是从**多视角图片**重建三维，需要 40–
 - `scripts/store-units.mjs`：按混沌地址写入 MatrixStore → **115.6 KB**（索引 30 KB + 载荷压缩 87 KB，压缩比 4.8×）
 - 进度文件 `~/.dsh/dsh-dafeiyu-training.json`：`{phase, done, total, percent, at}`
 - 原生状态卡：显示「训练 62% · 单元入库」+ 蓝色进度条，60 秒刷新，10 分钟无更新自动隐藏
+
+## 本地翻译器模式（chat.158）
+
+配置 `translator: dsh | local`：
+
+- `dsh`：用 DSH 的云端模型说话（默认，质量高）
+- `local`：用本地 7B 说话（离线，质量低一档）
+
+本地模式走 `serve_local_llm.py`（mlx，端口 18732，`POST /generate`）。
+实测对比（同一问题「三条链分别在哪一层」）：
+
+| 翻译器 | 回答 |
+|---|---|
+| dsh | 推理链归混沌、联想链归黎曼、思考链归空间 ✅ |
+| local 7B | 「好像是区块链的共识机制吧？」 ❌ 完全跑偏 |
+
+说明：**R1 蒸馏版当翻译器不合格**——它会把指令当思考题，忽略注入的事实。
+要本地可用，需换成指令模型（如 Qwen2.5-7B-Instruct）或做 SFT。
