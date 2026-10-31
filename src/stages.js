@@ -236,10 +236,9 @@ function cosineOfMaps(a, b) {
 }
 
 function entropyOfText(text) {
-  const dist = distributionOf(text)
-  let entropy = 0
-  for (const p of dist.values()) if (p > 0) entropy -= p * Math.log2(p)
-  return entropy
+  // 统一用 SAN 指纹熵（SAD 分布熵）
+  const result = sanEntropy(text, { window: 6 })
+  return result.entropy
 }
 
 function tokenLength(text) {

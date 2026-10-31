@@ -6,7 +6,9 @@
 //         这一步把"无时序"变成"有时序"。
 // 空间层：把时序序列映射成空间坐标（排列 + 素数对），得到可寻址的"位置"。
 
-function shannonEntropy(buckets) {
+// 注意：这是"混沌层的桶分布熵"，只用来调 r，不是系统熵；
+// 系统熵统一走 san.js 的 SAN 指纹熵。
+function bucketEntropy(buckets) {
   const total = buckets.reduce((sum, value) => sum + value, 0) || 1
   let entropy = 0
   for (const value of buckets) {
@@ -30,7 +32,7 @@ export function chaosLayer({ seed = 0.4, length = 1024, buckets = 16, targetEntr
     if (i % 64 === 63) {
       const hist = new Array(buckets).fill(0)
       for (const value of window) hist[Math.min(buckets - 1, Math.floor(value * buckets))] += 1
-      const entropy = shannonEntropy(hist)
+      const entropy = bucketEntropy(hist)
       entropies.push(entropy)
       const error = targetEntropy - entropy
       r = Math.min(4, Math.max(3.57, r + error * 0.02))
@@ -43,7 +45,7 @@ export function chaosLayer({ seed = 0.4, length = 1024, buckets = 16, targetEntr
   if (window.length > 0) {
     const hist = new Array(buckets).fill(0)
     for (const value of window) hist[Math.min(buckets - 1, Math.floor(value * buckets))] += 1
-    entropies.push(shannonEntropy(hist))
+    entropies.push(bucketEntropy(hist))
   }
   return { stream, entropies, r }
 }
@@ -85,7 +87,7 @@ export function generateWorld({ seed = 0.4, length = 1024, targetEntropy = 3.6 }
   const buckets = new Array(16).fill(0)
   for (const value of chaos.stream) buckets[Math.min(15, Math.floor(value * 16))] += 1
   return {
-    chaosEntropy: Number(shannonEntropy(buckets).toFixed(3)),
+    chaosEntropy: Number(bucketEntropy(buckets).toFixed(3)),
     avgWindowEntropy: Number((chaos.entropies.reduce((sum, value) => sum + value, 0) / Math.max(1, chaos.entropies.length)).toFixed(3)),
     r: Number(chaos.r.toFixed(3)),
     points: space.length,
