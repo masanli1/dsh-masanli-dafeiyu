@@ -40,8 +40,13 @@ const hourBucket = (date = new Date()) => {
   return 'evening'
 }
 
-export function createPolicy({ path = RL_PATH, epsilon = 0.25, logger = console, actions = ACTIONS, hints = STYLE_HINT } = {}) {
-  let data = { q: {}, counts: {}, plays: 0, epsilon, alpha: 0.3, actions, hints, history: [] }
+export function createPolicy({ path = RL_PATH, epsilon = 0.35, explorationFloor = 0.15, explorationConstant = 0.6, logger = console, actions = ACTIONS, hints = STYLE_HINT } = {}) {
+  let data = {
+    q: {}, counts: {}, plays: 0,
+    epsilon, alpha: 0.3,
+    floor: explorationFloor, c: explorationConstant,
+    actions, hints, history: [],
+  }
   try { data = { ...data, ...JSON.parse(readFileSync(path, 'utf8')) } } catch {}
 
   const save = () => {
@@ -55,12 +60,23 @@ export function createPolicy({ path = RL_PATH, epsilon = 0.25, logger = console,
 
   const choose = (context) => {
     data.plays += 1
-    const eps = Math.max(0.05, data.epsilon * Math.pow(0.995, data.plays))
-    if (Math.random() < eps) return { action: actions[Math.floor(Math.random() * actions.length)], explored: true, epsilon: eps }
+    // 探索率不衰减到 0：保底 floor，保证"总有新选择"
+    const floor = Number.isFinite(data.floor) ? data.floor : 0.15
+    const eps = Math.max(floor, (Number.isFinite(data.epsilon) ? data.epsilon : 0.35) * Math.pow(0.998, data.plays))
+    if (Math.random() < eps) {
+      // 随机探索时也稍微偏向"没怎么试过"的动作
+      const fresh = [...actions].sort((a, b) => (data.counts[keyOf(context, a)] ?? 0) - (data.counts[keyOf(context, b)] ?? 0))
+      const pool = fresh.slice(0, Math.max(1, Math.ceil(actions.length / 2)))
+      return { action: pool[Math.floor(Math.random() * pool.length)], explored: true, epsilon: eps }
+    }
+    // 利用时用 UCB：Q + c·√(ln N / n)，给冷门动作一点机会
+    const total = Object.values(data.counts).reduce((sum, value) => sum + value, 0) + 1
+    const c = Number.isFinite(data.c) ? data.c : 0.6
     let best = actions[0]
     let bestValue = -Infinity
     for (const action of actions) {
-      const value = data.q[keyOf(context, action)] ?? 0
+      const key = keyOf(context, action)
+      const value = (data.q[key] ?? 0) + c * Math.sqrt(Math.log(total + 1) / ((data.counts[key] ?? 0) + 1))
       if (value > bestValue) { bestValue = value; best = action }
     }
     return { action: best, explored: false, epsilon: eps }
@@ -104,13 +120,15 @@ export function createPolicy({ path = RL_PATH, epsilon = 0.25, logger = console,
   })
 
   const exportHistory = () => [...(data.history ?? [])]
-  const applyHyper = ({ alpha, epsilon }) => {
+  const applyHyper = ({ alpha, epsilon, floor, c }) => {
     if (Number.isFinite(alpha)) data.alpha = Math.min(0.9, Math.max(0.02, Number(alpha)))
-    if (Number.isFinite(epsilon)) data.epsilon = Math.min(0.6, Math.max(0.02, Number(epsilon)))
+    if (Number.isFinite(epsilon)) data.epsilon = Math.min(0.9, Math.max(0.15, Number(epsilon)))
+    if (Number.isFinite(floor)) data.floor = Math.min(0.9, Math.max(0.15, Number(floor)))
+    if (Number.isFinite(c)) data.c = Math.min(1.5, Math.max(0.1, Number(c)))
     save()
-    return { alpha: data.alpha, epsilon: data.epsilon }
+    return { alpha: data.alpha, epsilon: data.epsilon, floor: data.floor ?? 0.15, c: data.c ?? 0.6 }
   }
-  const hyper = () => ({ alpha: data.alpha ?? 0.3, epsilon: data.epsilon ?? 0.25 })
+  const hyper = () => ({ alpha: data.alpha ?? 0.3, epsilon: data.epsilon ?? 0.35, floor: data.floor ?? 0.15, c: data.c ?? 0.6 })
 
   return { choose, update, status, matrix, contextOf, exportHistory, applyHyper, hyper, path }
 }

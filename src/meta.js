@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path'
 
 export const META_PATH = join(homedir(), '.dsh', 'dsh-dafeiyu-meta.json')
 
-function replay(history, { alpha, epsilon }) {
+function replay(history, { alpha, epsilon, floor = 0.15 }) {
   const q = new Map()
   let total = 0
   let count = 0
@@ -21,7 +21,8 @@ function replay(history, { alpha, epsilon }) {
   }
   const mean = count ? total / count : 0
   // 探索惩罚：ε 越大越随机，稍微扣一点
-  return mean - epsilon * 0.05
+  // 轻微惩罚过度探索：ε 越高越随机，但保底 floor 不罚
+  return mean - Math.max(0, epsilon - floor) * 0.02
 }
 
 export function createMeta({ path = META_PATH, logger = console } = {}) {
@@ -41,14 +42,15 @@ export function createMeta({ path = META_PATH, logger = console } = {}) {
     let best = null
     for (let i = 0; i < samples; i += 1) {
       const candidate = {
-        alpha: 0.02 + Math.random() * 0.58,
-        epsilon: 0.02 + Math.random() * 0.38,
+        alpha: 0.05 + Math.random() * 0.55,
+        epsilon: 0.15 + Math.random() * 0.45,
+        floor: 0.15 + Math.random() * 0.25,
       }
       const score = replay(history, candidate)
       if (!best || score > best.score) best = { ...candidate, score }
     }
     const before = policy.hyper?.() ?? null
-    policy.applyHyper?.({ alpha: best.alpha, epsilon: best.epsilon })
+    policy.applyHyper?.({ alpha: best.alpha, epsilon: best.epsilon, floor: best.floor })
     const after = policy.hyper?.() ?? null
     data.rounds += 1
     data.best[name] = { at: Date.now(), before, after, score: Number(best.score.toFixed(4)), samples }

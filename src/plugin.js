@@ -99,6 +99,7 @@ export const Config = Schema.object({
   voiceAnnouncements: Schema.boolean().default(true).description('任务完成或出错时用语音播报一句'),
   voiceName: Schema.string().default('Tingting').description('语音音色（macOS 系统语音名，如 Tingting、Eddy、Flo）'),
   chatIdleSeconds: Schema.number().min(5).max(600).step(5).default(15).description('对话面板多久没操作自动收起（秒）'),
+  explorationRate: Schema.number().min(0.05).max(0.9).step(0.05).default(0.35).description('RL 随机探索比例（越高越爱试新选择，保底 0.15）'),
   voiceShaping: Schema.boolean().default(false).description('是否用音色包络给 TTS 染色（关闭=自然发音，更顺）'),
   voicePreset: Schema.string().default('').description('学来的自定义音色（留空 = 原声）。在「声音复刻」里学会后填音色名'),
   voiceRate: Schema.number().min(100).max(320).step(10).default(170).description('语速（每分钟词数）'),
@@ -165,6 +166,7 @@ const defaults = Object.freeze({
   voiceAnnouncements: true,
   voiceName: 'Tingting',
   chatIdleSeconds: 15,
+  explorationRate: 0.35,
   voiceShaping: false,
   voicePreset: '',
   voiceRate: 170,
@@ -209,6 +211,7 @@ function publicConfig(config = {}) {
     voiceAnnouncements: config.voiceAnnouncements !== false,
     voiceName: config.voiceName ?? defaults.voiceName,
     chatIdleSeconds: Number.isFinite(config.chatIdleSeconds) ? config.chatIdleSeconds : defaults.chatIdleSeconds,
+    explorationRate: Number.isFinite(config.explorationRate) ? config.explorationRate : defaults.explorationRate,
     voiceShaping: config.voiceShaping === true,
     voicePreset: asString(config.voicePreset, ''),
     voiceRate: Number.isFinite(config.voiceRate) ? config.voiceRate : defaults.voiceRate,
@@ -1731,6 +1734,11 @@ export function apply(ctx, config = {}) {
     logger,
   })
   const director = createDirector({ ctx, policy: orderPolicy, goldbach, logger })
+  try {
+    const rate = Number(settings.get()?.explorationRate) || 0.35
+    policy.applyHyper?.({ epsilon: rate, floor: 0.15 })
+    orderPolicy.applyHyper?.({ epsilon: rate, floor: 0.15 })
+  } catch {}
   const meta = createMeta({ logger })
   try { registerMetaTool(ctx, { meta, policies: { chat: policy, director: orderPolicy }, logger }) } catch (error) { logger.error?.(`元优化挂载失败: ${error?.message ?? error}`) }
   try { registerDirectorTool(ctx, { director, logger }) } catch (error) { logger.error?.(`调度台工具挂载失败: ${error?.message ?? error}`) }
