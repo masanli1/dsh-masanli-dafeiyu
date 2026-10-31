@@ -1114,6 +1114,36 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({
           kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/feedback',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            let body = ''
+            req.on('data', (chunk) => { body += chunk })
+            req.on('end', () => {
+              try {
+                const data = JSON.parse(body || '{}')
+                const reward = Number(data.reward ?? (data.good ? 1 : -1))
+                const kind = String(data.kind ?? 'chat')
+                const context = String(data.context ?? '')
+                const action = String(data.action ?? '')
+                const policy = kind === 'director' ? config.orderPolicy : config.policy
+                const updated = policy?.update?.(context || 'manual|feedback', action || 'unknown', reward)
+                try {
+                  config.chains?.add?.('think', {
+                    text: `人工标定：${kind} ${action || '当前'} → 奖励 ${reward}`,
+                    relation: 'check',
+                  })
+                } catch {}
+                jsonResponse(res, 200, { ok: true, kind, reward, updated })
+              } catch (error) { jsonResponse(res, 400, { error: String(error?.message ?? error) }) }
+            })
+          },
+        }),
+        'dsh-dafeiyu: feedback',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
           path: '/plugins/dsh-dafeiyu/emote',
           handler: (req, res) => {
             if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })

@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { writeJsonAtomic } from './atomic.js'
+import { chaosLayer, riemannLayer, spaceLayer } from './chaos-layers.js'
 
 export const PERM_PATH = join(homedir(), '.dsh', 'dsh-dafeiyu-perm-memory.json')
 
@@ -72,7 +73,38 @@ function hashKey(key) {
 
 const PART_SIZE = 500
 
-export function createPermMemory({ path = PERM_PATH, order = 10, logger = console } = {}) {
+// 三层地址：key → 种子 → 混沌流 → 时序排名 → 空间坐标 → 排名
+// 同 key 稳定复现，且地址带有"熵 + 时间 + 空间"的属性。
+const ADDRESS_CACHE = new Map()
+const ADDRESS_CACHE_LIMIT = 5000
+
+export function chaosAddress(key, order = 17, steps = 24) {
+  const cacheKey = `${order}:${key}`
+  const cached = ADDRESS_CACHE.get(cacheKey)
+  if (cached !== undefined) return cached
+  let hash = 2166136261
+  const value = String(key)
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i)
+    hash = Math.imul(hash, 16777619) >>> 0
+  }
+  const seed = ((hash >>> 8) % 100000) / 100000
+  const chaos = chaosLayer({ seed: Math.max(0.05, seed), length: steps })
+  const time = riemannLayer(chaos.stream)
+  const space = spaceLayer(time.ranks)
+  // 地址必须依赖整条轨迹（只看最后一站只有 24 种可能）
+  const cap = BigInt(capacityOf(order))
+  let acc = 0n
+  for (let i = 0; i < space.length; i += 1) {
+    acc = (acc * 131n + BigInt(space[i].address) + BigInt(i)) % cap
+  }
+  const address = Number(acc)
+  if (ADDRESS_CACHE.size > ADDRESS_CACHE_LIMIT) ADDRESS_CACHE.clear()
+  ADDRESS_CACHE.set(cacheKey, address)
+  return address
+}
+
+export function createPermMemory({ path = PERM_PATH, order = 10, logger = console, addressMode = 'chaos' } = {}) {
   let data = { order, entries: [], surges: 0 }
   const partsDir = `${path}.d`
   try {
@@ -92,6 +124,16 @@ export function createPermMemory({ path = PERM_PATH, order = 10, logger = consol
       data = { ...data, ...JSON.parse(readFileSync(path, 'utf8')) }
     }
   } catch {}
+
+  let saveTimer = null
+  const scheduleSave = () => {
+    if (saveTimer) return
+    saveTimer = setTimeout(() => { saveTimer = null; save() }, 80)
+    if (typeof saveTimer.unref === 'function') saveTimer.unref()
+  }
+
+  let usedRanks = null
+  const rebuildUsedRanks = () => { usedRanks = new Set(data.entries.map((entry) => entry.rank)) }
 
   const written = new Map()
   const save = () => {
@@ -127,7 +169,8 @@ export function createPermMemory({ path = PERM_PATH, order = 10, logger = consol
 
   const probe = (key, step = 0) => {
     const cap = capacityOf(data.order)
-    return (hashKey(key) + step) % Math.min(cap, Number.MAX_SAFE_INTEGER)
+    const base = addressMode === 'chaos' ? chaosAddress(key, data.order) : hashKey(key)
+    return (base + step) % Math.min(cap, Number.MAX_SAFE_INTEGER)
   }
 
   const remember = (key, text, meta = {}) => {
@@ -143,8 +186,8 @@ export function createPermMemory({ path = PERM_PATH, order = 10, logger = consol
     }
     let step = 0
     let rank = probe(id, step)
-    const used = new Set(data.entries.map((entry) => entry.rank))
-    while (used.has(rank) && step < 10_000) { step += 1; rank = probe(id, step) }
+    if (!usedRanks) rebuildUsedRanks()
+    while (usedRanks.has(rank) && step < 10_000) { step += 1; rank = probe(id, step) }
     const { permutation, inversion } = unrank(rank, data.order)
     const entry = {
       key: id,
@@ -161,7 +204,8 @@ export function createPermMemory({ path = PERM_PATH, order = 10, logger = consol
     data.entries.push(entry)
     data.surges += entry.surges
     index.set(id, entry)
-    save()
+    if (usedRanks) usedRanks.add(rank)
+    scheduleSave()
     return entry
   }
 
