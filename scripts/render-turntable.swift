@@ -28,6 +28,33 @@ if modelPath == "test" {
     exit(2)
   }
   scene = loaded
+  // 如果给了贴图，就把所有材质换成"无光照 + 贴图"，避免灰模
+  if let texturePath = ProcessInfo.processInfo.environment["TURNTABLE_TEXTURE"],
+     let texture = NSImage(contentsOfFile: texturePath) {
+    scene.rootNode.enumerateHierarchy { node, _ in
+      guard let geometry = node.geometry else { return }
+      for material in geometry.materials {
+        material.lightingModel = .constant
+        material.diffuse.contents = texture
+        material.isDoubleSided = true
+      }
+    }
+  }
+  // 自动居中 + 缩放到适合画幅
+  let (minBound, maxBound) = scene.rootNode.boundingBox
+  let extent = SCNVector3(maxBound.x - minBound.x, maxBound.y - minBound.y, maxBound.z - minBound.z)
+  let largest = max(extent.x, max(extent.y, extent.z))
+  if largest > 0 {
+    let scale = 1.8 / largest
+    for node in scene.rootNode.childNodes {
+      node.scale = SCNVector3(scale, scale, scale)
+      node.position = SCNVector3(
+        -((minBound.x + maxBound.x) / 2) * scale,
+        -((minBound.y + maxBound.y) / 2) * scale,
+        -((minBound.z + maxBound.z) / 2) * scale
+      )
+    }
+  }
 }
 
 // 相机：正前方、略高

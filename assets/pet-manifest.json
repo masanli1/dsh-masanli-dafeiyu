@@ -5990,6 +5990,49 @@
       "frameMs": 40,
       "loop": true,
       "source": "derived:turn360"
+    },
+    "turn3d": {
+      "frames": [
+        "turn3d/turn3d_001.webp",
+        "turn3d/turn3d_002.webp",
+        "turn3d/turn3d_003.webp",
+        "turn3d/turn3d_004.webp",
+        "turn3d/turn3d_005.webp",
+        "turn3d/turn3d_006.webp",
+        "turn3d/turn3d_007.webp",
+        "turn3d/turn3d_008.webp",
+        "turn3d/turn3d_009.webp",
+        "turn3d/turn3d_010.webp",
+        "turn3d/turn3d_011.webp",
+        "turn3d/turn3d_012.webp",
+        "turn3d/turn3d_013.webp",
+        "turn3d/turn3d_014.webp",
+        "turn3d/turn3d_015.webp",
+        "turn3d/turn3d_016.webp",
+        "turn3d/turn3d_017.webp",
+        "turn3d/turn3d_018.webp",
+        "turn3d/turn3d_019.webp",
+        "turn3d/turn3d_020.webp",
+        "turn3d/turn3d_021.webp",
+        "turn3d/turn3d_022.webp",
+        "turn3d/turn3d_023.webp",
+        "turn3d/turn3d_024.webp",
+        "turn3d/turn3d_025.webp",
+        "turn3d/turn3d_026.webp",
+        "turn3d/turn3d_027.webp",
+        "turn3d/turn3d_028.webp",
+        "turn3d/turn3d_029.webp",
+        "turn3d/turn3d_030.webp",
+        "turn3d/turn3d_031.webp",
+        "turn3d/turn3d_032.webp",
+        "turn3d/turn3d_033.webp",
+        "turn3d/turn3d_034.webp",
+        "turn3d/turn3d_035.webp",
+        "turn3d/turn3d_036.webp"
+      ],
+      "frameMs": 45,
+      "loop": true,
+      "source": "render:3d"
     }
   },
   "stateMap": {
@@ -6027,7 +6070,8 @@
     "spin360",
     "rhythm_demo",
     "rhythm_1_2_3_4_5_6_7_8",
-    "turn360"
+    "turn360",
+    "turn3d"
   ],
   "idleMicroIntervalsMs": {
     "quiet": [

@@ -1343,3 +1343,23 @@ NeRF / 3DGS（NGRF 一类）是从**多视角图片**重建三维，需要 40–
    需要下载 1–2 GB 模型，且 M4 只能走 MPS，速度慢；
 2. **实物扫描**：真做一个手办/周边，拍 40–80 张照片，用 macOS 自带 **Object Capture**（无需 CUDA）
    生成 `.usdz`，再交给 `render-turntable`。
+
+## 单图生 3D → 真转身（chat.141）
+
+方案 A 的**可跑通实现**（不需要 CUDA、不需要 1.7GB 模型）：
+
+```
+立绘 PNG（带 alpha）
+  → scripts/image-to-3d.py：alpha 剪影 + 距离场 → 厚度场
+     → 前面贴原图、背面镜像、边界加侧壁 → .obj + .mtl + .png
+  → scripts/render-turntable.swift（SceneKit，无光照贴图 + 自动居中缩放）
+     → 36 帧透明背景转台
+  → scripts/frames-to-clip.py → 动作 clip `turn3d`
+```
+
+实测：121×140 网格、22,508 顶点、43,336 面；渲染 36 帧；已进动作库（20 个微动作）。
+
+局限（诚实）：
+- 这是"有厚度的浮雕"，**不是真体积**；背面是镜像贴图，不是后脑勺；
+- 没有内部结构，侧看是薄片（厚度约宽度 0.35）；
+- TripoSR 这条路走不通：依赖 torchmcubes（只有 CUDA 实现），M4 上编译失败。
