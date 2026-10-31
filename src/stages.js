@@ -53,7 +53,7 @@ export async function searchViaBridge(query, { top = 2, timeoutMs = 1200 } = {})
     const response = await fetch(`${BRIDGE_URL}/search`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ query, top }),
+      body: JSON.stringify({ query, top, diverse: true }),
       signal: AbortSignal.timeout(timeoutMs),
     })
     if (!response.ok) return null
