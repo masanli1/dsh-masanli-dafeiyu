@@ -27,6 +27,7 @@ import { createPolicy, registerRlTool } from './rl.js'
 import { createDirector, registerDirectorTool, ORDERS } from './director.js'
 import { createSelfTool, registerSelfTool } from './selftool.js'
 import { createPermMemory, registerPermMemoryTool } from './perm-memory.js'
+import { createSkillStore, registerSkillTool } from './skills.js'
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { existsSync as fileExists, readFileSync as readFileSyncImpl, readdirSync as readdirSyncImpl } from 'node:fs'
@@ -978,6 +979,17 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({
           kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/debug/skills',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            try { jsonResponse(res, 200, config.skills?.stats?.() ?? {}) } catch (error) { jsonResponse(res, 500, { error: String(error?.message ?? error) }) }
+          },
+        }),
+        'dsh-dafeiyu: skills debug',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
           path: '/plugins/dsh-dafeiyu/debug/matrix-memory',
           handler: (req, res) => {
             if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
@@ -1715,6 +1727,8 @@ export function apply(ctx, config = {}) {
   else registerMotion(ctx)
   const permMemory = createPermMemory({ logger })
   try { registerPermMemoryTool(ctx, { memory: permMemory, logger }) } catch (error) { logger.error?.(`矩阵记忆挂载失败: ${error?.message ?? error}`) }
+  const skills = createSkillStore({ memory: permMemory, logger })
+  try { registerSkillTool(ctx, { skills, logger }) } catch (error) { logger.error?.(`技能库挂载失败: ${error?.message ?? error}`) }
   const selfTool = createSelfTool({ logger })
   try { registerSelfTool(ctx, { selfTool, logger }) } catch (error) { logger.error?.(`复刻工具挂载失败: ${error?.message ?? error}`) }
   const notifier = createNotifier({ webhooks: Array.isArray(config.notifyWebhooks) ? config.notifyWebhooks : [], logger })
@@ -1734,6 +1748,7 @@ export function apply(ctx, config = {}) {
     director,
     selfTool,
     permMemory,
+    skills,
     routine,
     english,
     evolution,

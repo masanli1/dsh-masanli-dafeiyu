@@ -1121,3 +1121,19 @@ Lv.4 不再只是光晕，而是一整套「劈刀」演出（每帧程序化绘
 - 工具 `matrix-memory`（remember / recall / stats / expand / list），
   端点 `GET /plugins/dsh-dafeiyu/debug/matrix-memory`；
 - 生活记忆（`noteLife`）会自动镜像写入矩阵。
+
+## 记忆 → 技能库（chat.111–114）
+
+`src/skills.js`
+
+| 概念 | 实现 |
+|---|---|
+| 技能 | `{id, trigger, kind(template/tool), payload, hits, level}` |
+| 指纹 | 每条技能在矩阵记忆里登记一个排列（`rank` + 逆序数） |
+| 匹配 | 字符 1–2 gram 余弦，阈值 0.5 |
+| 升级 | 命中 3 次自动从 `candidate` 升为 `mastered` |
+| 执行 | 模板替换 `{input}` / `{date}`，或转交工具名 |
+| 自动学习 | 聊天里成功的问答会同时进 `selftool` 和技能库 |
+
+工具名用 **`dfy-skill`**（`skill` 和内置技能目录工具重名，会被拒）。
+端点：`GET /plugins/dsh-dafeiyu/debug/skills`。
