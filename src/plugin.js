@@ -29,6 +29,7 @@ import { createSelfTool, registerSelfTool } from './selftool.js'
 import { createPermMemory, registerPermMemoryTool } from './perm-memory.js'
 import { createSkillStore, registerSkillTool } from './skills.js'
 import { createGoldbachMemory, registerGoldbachTool } from './goldbach-memory.js'
+import { createMus, registerMusTool } from './mus.js'
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { existsSync as fileExists, readFileSync as readFileSyncImpl, readdirSync as readdirSyncImpl } from 'node:fs'
@@ -981,6 +982,17 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({
           kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/debug/mus',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            try { jsonResponse(res, 200, config.mus?.stats?.() ?? {}) } catch (error) { jsonResponse(res, 500, { error: String(error?.message ?? error) }) }
+          },
+        }),
+        'dsh-dafeiyu: mus debug',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
           path: '/plugins/dsh-dafeiyu/debug/goldbach',
           handler: (req, res) => {
             if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
@@ -1676,6 +1688,17 @@ export function apply(ctx, config = {}) {
   const evolution = createEvolutionStore({ logger })
   const policy = createPolicy({ logger })
   try { registerRlTool(ctx, { policy, logger }) } catch (error) { logger.error?.(`RL 工具挂载失败: ${error?.message ?? error}`) }
+  const mus = createMus({ logger })
+  try {
+    registerMusTool(ctx, { mus, logger })
+    // 预置两个宇宙，开箱即用
+    mus.define('降噪质量', {
+      parameters: [{ name: '降噪强度', min: 0, max: 1 }, { name: '保留原声', min: 0, max: 1 }],
+      objective: '降噪强度 * 6 + 保留原声 * 4',
+      target: 7.5,
+      constraints: ['降噪强度 > 0.3', '保留原声 > 0.2'],
+    })
+  } catch (error) { logger.warn?.(`MUS 预置宇宙失败: ${error?.message ?? error}`) }
   const goldbach = createGoldbachMemory({ logger })
   try { registerGoldbachTool(ctx, { goldbach, logger }) } catch (error) { logger.error?.(`哥德巴赫联想挂载失败: ${error?.message ?? error}`) }
   const orderPolicy = createPolicy({
@@ -1775,6 +1798,7 @@ export function apply(ctx, config = {}) {
     permMemory,
     skills,
     goldbach,
+    mus,
     routine,
     english,
     evolution,
