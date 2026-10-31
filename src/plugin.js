@@ -38,6 +38,7 @@ import { createDrive, registerDriveTool } from './drive.js'
 import { createLayers, registerLayerTool } from './layers.js'
 import { createStageLibrary, registerStageTool } from './stages.js'
 import { registerTurnTool } from './turns.js'
+import { createEntropyWatch } from './entropy-watch.js'
 import { createPerception, registerPerceptionTool } from './perception.js'
 import { createDistributed, registerDistTool } from './distributed.js'
 import { spawn } from 'node:child_process'
@@ -70,6 +71,7 @@ export const FRAME_ENDPOINT = '/plugins/dsh-dafeiyu/frame'
 export const CHAT_STATE_ENDPOINT = '/plugins/dsh-dafeiyu/chat/state'
 export const CHAT_SEND_ENDPOINT = '/plugins/dsh-dafeiyu/chat/send'
 export const CHAT_TARGET_ENDPOINT = '/plugins/dsh-dafeiyu/chat/target'
+export const ENTROPY_ENDPOINT = '/plugins/dsh-dafeiyu/entropy'
 export { BALANCE_ENDPOINT }
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -421,6 +423,8 @@ function mount(ctx, config = {}, eventCtx = ctx) {
 
 function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   const eventStream = createEventStream()
+  // 路由在挂载早期就注册了，变量必须在最前面声明（否则请求可能在 TDZ 期间到达）
+  const entropyWatch = createEntropyWatch()
   // 只把"纯配置"交给 settings 作用域：运行时服务对象里有 .get 之类的方法，
   // 会被 plainConfig 误当成 settings 解包（曾导致整个 App 启动失败）。
   const SERVICE_KEYS = [
@@ -1029,6 +1033,23 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({ kind: 'exact', path: CHAT_SEND_ENDPOINT, handler: chatHandlers.send }),
         'dsh-dafeiyu: local chat send endpoint',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: ENTROPY_ENDPOINT,
+          handler: async (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            try {
+              const state = await chat.state()
+              const payload = entropyWatch.record(state?.messages ?? [])
+              return jsonResponse(res, 200, payload ?? { current: 0, series: [] })
+            } catch (error) {
+              return jsonResponse(res, 500, { error: String(error?.message ?? error) })
+            }
+          },
+        }),
+        'dsh-dafeiyu: entropy endpoint',
       )
       httpCtx.effect(
         () => httpCtx.webServer.register({ kind: 'exact', path: CHAT_TARGET_ENDPOINT, handler: chatHandlers.target }),
@@ -2015,6 +2036,7 @@ export function apply(ctx, config = {}) {
     drive,
     layers,
     stages,
+    entropyWatch,
     runDirectorWithChain,
     perception,
     dist,

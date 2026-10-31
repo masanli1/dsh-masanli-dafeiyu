@@ -1529,3 +1529,10 @@ SAN 熵：当前 2.585 / 历史 2.302 → 梯度 0.283
 ```
 
 已知噪声：纯引号句（`”`）还没完全过滤，会混进少量假转折。
+
+## 熵曲线（chat.165–166）
+
+- 新端点 `/plugins/dsh-dafeiyu/entropy`：取最近 6 条消息算 SAN 熵，写入 `~/.dsh/dsh-dafeiyu-entropy.json`（保留最近 40 个采样）；
+- 原生状态卡读该文件画熵曲线（下一步）；
+- 修复：`entropyWatch` 原先声明在路由注册之后，启动早期的请求会撞 TDZ（报 `entropyWatch is not defined`），
+  现在移到 `mountCompanion` 最前面。
