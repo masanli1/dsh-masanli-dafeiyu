@@ -34,6 +34,7 @@ import { createMeta, registerMetaTool } from './meta.js'
 import { createCrtMemory, registerCrtTool } from './crt-memory.js'
 import { createTheory, registerTheoryTool } from './theory.js'
 import { createChainStore, registerChainTool } from './chains.js'
+import { createDrive, registerDriveTool } from './drive.js'
 import { createPerception, registerPerceptionTool } from './perception.js'
 import { createDistributed, registerDistTool } from './distributed.js'
 import { spawn } from 'node:child_process'
@@ -427,7 +428,17 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   if (typeof moodTimer.unref === 'function') moodTimer.unref()
   const PRAISE = /(可爱|好乖|真棒|厉害|喜欢你|好看|漂亮|聪明|谢谢大肥鱼|辛苦了)/
   const FEED = /(吃饭|喂你|给你吃|零食|喝点)/
-  const chat = createChatService({ ctx, logger, config: () => settings.get(), memory: config.memoryStore, mood, emote: config.emote, policy: config.policy, perception: config.perception, onUserMessage: config.onUserMessage })
+  const chat = createChatService({ ctx, logger, config: () => settings.get(), memory: config.memoryStore, mood, emote: config.emote, policy: config.policy, perception: config.perception, onUserMessage: config.onUserMessage,
+    onPlan: (plan) => { try { config.chains?.add?.('think', { text: `打算回答「${plan.user}」：风格 ${plan.styleHint}`, relation: 'hypothesis' }) } catch {} },
+    reasonHistory: (message) => {
+      try {
+        if (!/任务|进度|调度|降噪|检查|状态/.test(message)) return ''
+        const last = (config.chains?.list?.('reason', 3) ?? [])
+        if (!last.length) return ''
+        const lines = config.chains?.replay?.(last[0].id)?.slice(0, 6) ?? []
+        return lines.join('\n')
+      } catch { return '' }
+    } })
   const chatHandlers = createChatHandlers(chat, logger)
   const ffmpegCandidates = () => [
     process.env.DF_FACTORY_FFMPEG,
@@ -1754,7 +1765,19 @@ export function apply(ctx, config = {}) {
       constraints: ['降噪强度 > 0.3', '保留原声 > 0.2'],
     })
   } catch (error) { logger.warn?.(`MUS 预置宇宙失败: ${error?.message ?? error}`) }
-  const goldbach = createGoldbachMemory({ logger })
+  const goldbach = createGoldbachMemory({
+    logger,
+    onChain: (result) => {
+      // 联想链自动记录：把每一跳写成 associate 节点
+      try {
+        chains.open('associate', `联想：${result.path[0]}`)
+        result.path.forEach((key, index) => {
+          chains.add('associate', { text: key, relation: index === 0 ? 'start' : 'associate' })
+        })
+        chains.close('associate')
+      } catch {}
+    },
+  })
   try { registerGoldbachTool(ctx, { goldbach, logger }) } catch (error) { logger.error?.(`哥德巴赫联想挂载失败: ${error?.message ?? error}`) }
   const orderPolicy = createPolicy({
     path: join(homedir(), '.dsh', 'dsh-dafeiyu-director-policy.json'),
@@ -1806,6 +1829,8 @@ export function apply(ctx, config = {}) {
     }
   }
 
+  const drive = createDrive({ chains, logger })
+  try { registerDriveTool(ctx, { drive, logger }) } catch (error) { logger.error?.(`驱动链挂载失败: ${error?.message ?? error}`) }
   const theory = createTheory({ logger })
   try { registerTheoryTool(ctx, { theory, logger }) } catch (error) { logger.error?.(`理论记忆挂载失败: ${error?.message ?? error}`) }
   const crt = createCrtMemory({ logger })
@@ -1903,6 +1928,7 @@ export function apply(ctx, config = {}) {
     crt,
     theory,
     chains,
+    drive,
     runDirectorWithChain,
     perception,
     dist,

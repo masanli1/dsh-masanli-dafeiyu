@@ -1377,3 +1377,15 @@ NeRF / 3DGS（NGRF 一类）是从**多视角图片**重建三维，需要 40–
 - 每个节点带 `relation`（start/premise/conclusion/hypothesis/check/associate）；
 - 链持久化在 `~/.dsh/dsh-dafeiyu-chains.json`，可 `show` / `replay` 回放；
 - 实测：调度单自动生成「触发方式 → 执行 routine_check：成功（奖励 1）」。
+
+## 四条链全部接通（chat.147/148）
+
+| 能力 | 实现 | 实测 |
+|---|---|---|
+| 联想链自动记录 | `goldbach` 的 `onChain` 回调 → `chains.open('associate')` | 哥德巴赫 chain → 自动生成 3 步 associate 链 |
+| 思考链接入对话 | `chat.send` 前触发 `onPlan` → 写 think 节点 | 发送消息 → think 链出现「打算回答…」 |
+| 推理链回放注入 | `buildContext` 检测任务类关键词 → 注入上一条 reason 链 | 代码路径就绪（任务/进度/调度等词触发） |
+| **驱动链（分布之商）** | `src/drive.js`：当前关系分布 ÷ 历史分布，缺口最大者优先 | 只有 premise 时 → 建议 conclusion |
+
+驱动链不是提示词驱动，而是**分布驱动**：
+`Q = P_now(relation) / P_hist(relation)`，取 `P_hist − P_now` 最大的环节作为下一步。

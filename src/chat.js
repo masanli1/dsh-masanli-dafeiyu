@@ -70,7 +70,7 @@ export const PET_WORKSPACE = join(homedir(), 'Documents', '大肥鱼聊天')
 
 import { rememberFacts } from './memory-auto.js'
 
-export function createChatService({ ctx, logger = console, config = () => ({}), storePath = CHAT_STORE, memory, mood, emote, policy, perception, onUserMessage } = {}) {
+export function createChatService({ ctx, logger = console, config = () => ({}), storePath = CHAT_STORE, memory, mood, emote, policy, perception, onUserMessage, onPlan, reasonHistory } = {}) {
   const sessions = new Map()
   let targetId
   let manualTarget = ''
@@ -334,6 +334,11 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
         const seen = perception?.summary?.()
         if (seen) parts.push(`当前感知：${seen}`)
       } catch {}
+      // 推理链回放：同类任务直接把上一条链的步骤注入
+      try {
+        const history = typeof reasonHistory === 'function' ? reasonHistory(message) : ''
+        if (history) parts.push(`上次同类任务的推理链：\n${history}`)
+      } catch {}
       const remembered = memory?.summary?.()
       if (remembered) parts.push(`长期记忆：\n${remembered}`)
       // 只排除宠物会话本身；targetId 可能是某个工作会话（turn/start 时更新），不能一起排除。
@@ -385,6 +390,13 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
       }
     } catch {}
     rememberUser(value)
+    // 思考链：回答前先记下"打算怎么答"
+    try {
+      if (typeof onPlan === 'function') {
+        const preview = value.slice(0, 40)
+        onPlan({ user: preview, styleHint: styleHint || '默认', memories: 0 })
+      }
+    } catch {}
     // 强化学习：先用上一条消息的情绪给上一轮的选择打分，再按当前上下文选这轮的风格
     let styleHint = ''
     try {
