@@ -478,7 +478,17 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
     sessions: [...sessions.values()].map((record) => ({ id: record.id, title: record.title, at: record.at })),
   })
 
-  return { note, state, send, select, buildContext, stop, welcome, debug, policyStatus: () => policy?.status?.() ?? null }
+  // 会话卡死（连续 blocked）时重置，下一次自动新建
+  const reset = () => {
+    try {
+      dedicatedId = ''
+      writeStore({ dedicatedSessionId: '' })
+      logger.warn?.('dsh-dafeiyu chat: 会话已重置（连续被阻塞）')
+      return true
+    } catch { return false }
+  }
+
+  return { note, state, send, select, buildContext, stop, welcome, debug, reset, policyStatus: () => policy?.status?.() ?? null }
 }
 
 export const CHAT_SERVER_VERSION = 'v5'

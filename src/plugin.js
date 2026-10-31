@@ -570,6 +570,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
 
   let activeTurns = 0
   let lastUserText = ''
+  let blockedTurns = 0
   let lastSentTurns = -1
   const turnTimer = setInterval(() => {
     try {
@@ -864,7 +865,23 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       }
     } catch {}
     if (event?.type === 'turn/start') { activeTurns += 1; eventStats.turns += 1; syncPower() }
-    if (event?.type === 'turn/end') { activeTurns = Math.max(0, activeTurns - 1); syncPower() }
+    if (event?.type === 'turn/end') {
+      activeTurns = Math.max(0, activeTurns - 1)
+      syncPower()
+      // 连续被阻塞说明会话坏了，重置一次
+      try {
+        const kind = event?.data?.reason?.kind ?? ''
+        if (kind === 'blocked') {
+          blockedTurns += 1
+          if (blockedTurns >= 2) {
+            blockedTurns = 0
+            chat.reset?.()
+          }
+        } else {
+          blockedTurns = 0
+        }
+      } catch {}
+    }
     if (event?.type !== 'turn/end') greeter.noteActivity()
     if (!bridge || !reducer) return
     try {
