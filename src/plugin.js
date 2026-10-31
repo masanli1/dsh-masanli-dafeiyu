@@ -184,6 +184,7 @@ const defaults = Object.freeze({
   chatIdleSeconds: 15,
   explorationRate: 0.35,
   translator: 'dsh',
+  chaosTargetEntropy: 2.0,
   voiceShaping: false,
   voicePreset: '',
   voiceRate: 170,

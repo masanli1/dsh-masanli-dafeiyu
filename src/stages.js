@@ -24,6 +24,8 @@ function cosine(a, b) {
   return na && nb ? dot / Math.sqrt(na * nb) : 0
 }
 
+import { sanEntropy } from './san.js'
+
 export const BRIDGE_URL = process.env.DFY_BRIDGE_URL ?? 'http://127.0.0.1:18731'
 export const SELECTOR_PATH = process.env.DFY_SELECTOR ?? `${process.env.HOME}/.dsh/dsh-dafeiyu-selector.json`
 

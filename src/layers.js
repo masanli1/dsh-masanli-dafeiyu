@@ -3,6 +3,7 @@
 //   联想链 ← 黎曼层（时序）+ 哥德巴赫（素数周期）
 //   思考链 ← 空间层（坐标），由人为标定的强化学习决定探索哪个坐标
 import { chaosLayer, riemannLayer, spaceLayer } from './chaos-layers.js'
+import { sanEntropy } from './san.js'
 import { chaosAddress } from './perm-memory.js'
 
 export const CHAIN_LAYER = { reason: 'chaos', associate: 'riemann', think: 'space' }
@@ -16,16 +17,22 @@ export const LAYER_DUTY = {
 // 语义正确来自人为标定：space 层的选择权重
 export function createLayers({ chains, policy, config = {}, logger = console } = {}) {
   const settings = {
-    targetEntropy: Number(config.chaosTargetEntropy) || 3.6,
+    targetEntropy: Number(config.chaosTargetEntropy) || 2.0,
     steps: Number(config.chaosSteps) || 48,
     primePool: Number(config.primePool) || 512,
   }
 
-  // 混沌层：给当前状态一个熵值（用 key 的混沌流窗口熵近似）
-  const entropyOf = (key = String(Date.now())) => {
-    const chaos = chaosLayer({ seed: (Math.abs(hash(key)) % 100000) / 100000, length: settings.steps, targetEntropy: settings.targetEntropy })
-    const windowEntropy = chaos.entropies.reduce((sum, value) => sum + value, 0) / Math.max(1, chaos.entropies.length)
-    return { entropy: Number(windowEntropy.toFixed(3)), r: Number(chaos.r.toFixed(3)), target: settings.targetEntropy }
+  // 熵统一改用 SAN 指纹熵：SAD 分布的熵（比字频熵更能反映顺序结构）
+  const entropyOf = (text = String(Date.now())) => {
+    const result = sanEntropy(String(text), { window: 6 })
+    return {
+      entropy: result.entropy,
+      paths: result.paths,
+      distinctSad: result.distinctSad,
+      window: result.window,
+      source: 'SAN',
+      target: settings.targetEntropy,
+    }
   }
 
   // 黎曼层：给一串 key 排出时序（第几个先想）
