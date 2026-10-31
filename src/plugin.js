@@ -1734,11 +1734,15 @@ export function apply(ctx, config = {}) {
     logger,
   })
   const director = createDirector({ ctx, policy: orderPolicy, goldbach, logger })
-  try {
-    const rate = Number(settings.get()?.explorationRate) || 0.35
-    policy.applyHyper?.({ epsilon: rate, floor: 0.15 })
-    orderPolicy.applyHyper?.({ epsilon: rate, floor: 0.15 })
-  } catch {}
+  // 启动后延迟应用探索率（此时 settings 已就绪）
+  setTimeout(() => {
+    try {
+      const rate = Number(settings.get()?.explorationRate) || 0.35
+      policy.applyHyper?.({ epsilon: rate, floor: 0.15 })
+      orderPolicy.applyHyper?.({ epsilon: rate, floor: 0.15 })
+      logger.info?.(`dsh-dafeiyu: 探索率应用为 ${rate}`)
+    } catch (error) { logger.warn?.(`应用探索率失败: ${error?.message ?? error}`) }
+  }, 3000)
   const meta = createMeta({ logger })
   try { registerMetaTool(ctx, { meta, policies: { chat: policy, director: orderPolicy }, logger }) } catch (error) { logger.error?.(`元优化挂载失败: ${error?.message ?? error}`) }
   try { registerDirectorTool(ctx, { director, logger }) } catch (error) { logger.error?.(`调度台工具挂载失败: ${error?.message ?? error}`) }
