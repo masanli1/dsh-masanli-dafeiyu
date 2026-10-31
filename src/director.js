@@ -20,6 +20,23 @@ export const ORDERS = [
   { id: 'music_break', title: '放首歌', prompt: '【内部巡检】提议放一首歌休息一下，并说歌名风格，一句话，不要调用工具。' },
   { id: 'review_words', title: '复习单词', prompt: '【内部巡检】挑一个最近学过的英语单词，用一句话复习它，不要调用工具。' },
   { id: 'health_tip', title: '健康提醒', prompt: '【内部巡检】根据当前时间给一条健康提醒（喝水/起身/护眼），一句话，不要调用工具。' },
+  {
+    id: 'associate',
+    title: '联想一下',
+    // 动态提示：从哥德巴赫联想链里取出一条，让 DSH 顺着它说点什么
+    prompt: ({ goldbach } = {}) => {
+      try {
+        const keys = goldbach ? Object.keys(goldbach?.stats?.().sample ?? {}) : []
+        const families = goldbach?.families?.(1) ?? []
+        const seed = families[0]?.pairs?.[0]?.a
+        const chain = seed ? goldbach.rhythmClipName(seed, 5) : null
+        if (chain) {
+          return `【联想任务】忽略之前所有巡检内容，只做这件事：顺着这条联想链说一句话，把它们之间的联系讲出来——${chain.path.join(' → ')}（节奏 ${chain.rhythm.slice(0, 8).join(',')}）。不要调用工具，不要提任务状态。`
+        }
+      } catch {}
+      return '【内部巡检】回忆一下最近记得的两件事，说说它们有什么联系，一句话，不要调用工具。'
+    },
+  },
 ]
 
 const hourBucket = (date = new Date()) => {
@@ -30,7 +47,7 @@ const hourBucket = (date = new Date()) => {
   return 'evening'
 }
 
-export function createDirector({ ctx, policy, logger = console, orders = ORDERS, shareCwd = WORKSPACE } = {}) {
+export function createDirector({ ctx, policy, goldbach, logger = console, orders = ORDERS, shareCwd = WORKSPACE } = {}) {
   let sessionId = ''
   let store = { sessionId: '', history: [] }
   try { store = { ...store, ...JSON.parse(readFileSync(DIRECTOR_PATH, 'utf8')) } } catch {}
@@ -78,15 +95,17 @@ export function createDirector({ ctx, policy, logger = console, orders = ORDERS,
   }
 
   // 下层：读会话事件，判断这一单成功还是失败
-  const evaluate = async (target, timeoutMs = 120000) => {
+  const evaluate = async (target, baseline = 0, timeoutMs = 120000) => {
     const started = Date.now()
     while (Date.now() - started < timeoutMs) {
       await new Promise((resolve) => setTimeout(resolve, 1200))
       try {
         const query = ctx.get?.('sessionQuery')
         const observation = await query?.observeSession?.(target)
-        const events = observation?.events ?? []
+        const all = observation?.events ?? []
         try { observation?.[Symbol.dispose]?.() } catch {}
+        // 只看这次下发之后产生的事件，避免读到上一轮的旧结果
+        const events = all.length > baseline ? all.slice(baseline) : all
         const ended = [...events].reverse().find((event) => event?.type === 'turn/end')
         if (!ended) continue
         const kind = ended?.data?.kind ?? 'ok'
@@ -98,27 +117,34 @@ export function createDirector({ ctx, policy, logger = console, orders = ORDERS,
     return { ok: false, kind: 'timeout', text: '', elapsedMs: Date.now() - started }
   }
 
-  const runOnce = async ({ resolver, reason = 'manual' } = {}) => {
+  const runOnce = async ({ resolver, reason = 'manual', forceOrder = '' } = {}) => {
     const target = await ensureSession()
     if (!target) return { ok: false, error: '无法创建调度会话' }
     await adoptModel(target, resolver)
     const context = `${hourBucket()}|${reason}`
-    const choice = policy.choose(context)
+    const choice = forceOrder ? { action: forceOrder, explored: false } : policy.choose(context)
     const order = orders.find((item) => item.id === choice.action) ?? orders[0]
     const controller = ctx.get?.('sessionController')
+    let baseline = 0
+    try {
+      const observation = await ctx.get?.('sessionQuery')?.observeSession?.(target)
+      baseline = observation?.events?.length ?? 0
+      try { observation?.[Symbol.dispose]?.() } catch {}
+    } catch {}
+    const promptText = typeof order.prompt === 'function' ? order.prompt({ goldbach }) : order.prompt
     const admission = new AbortController()
     const receipt = await controller.prompt({
       sessionId: target,
       requestId: randomUUID(),
       mode: 'queue',
-      content: [{ type: 'text', text: order.prompt }],
+      content: [{ type: 'text', text: promptText }],
       clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     }, admission.signal)
     if (receipt?.accepted === false) {
       policy.update(context, order.id, -1)
       return { ok: false, order: order.id, error: receipt?.error ?? '未受理' }
     }
-    const result = await evaluate(target)
+    const result = await evaluate(target, baseline)
     const reward = result.ok ? 1 : -1
     policy.update(context, order.id, reward)
     const record = { at: new Date().toISOString(), order: order.id, context, reward, ...result }

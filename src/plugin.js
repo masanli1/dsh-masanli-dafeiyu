@@ -1070,7 +1070,8 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
           path: '/plugins/dsh-dafeiyu/director/run',
           handler: (req, res) => {
             if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
-            Promise.resolve(config.director?.runOnce?.({ reason: 'http' }))
+            const order = new URL(req.url ?? '/', 'http://127.0.0.1').searchParams.get('order') ?? ''
+            Promise.resolve(config.director?.runOnce?.({ reason: 'http', forceOrder: order }))
               .then((result) => jsonResponse(res, 200, result ?? {}))
               .catch((error) => jsonResponse(res, 500, { error: String(error?.message ?? error) }))
           },
@@ -1675,12 +1676,14 @@ export function apply(ctx, config = {}) {
   const evolution = createEvolutionStore({ logger })
   const policy = createPolicy({ logger })
   try { registerRlTool(ctx, { policy, logger }) } catch (error) { logger.error?.(`RL 工具挂载失败: ${error?.message ?? error}`) }
+  const goldbach = createGoldbachMemory({ logger })
+  try { registerGoldbachTool(ctx, { goldbach, logger }) } catch (error) { logger.error?.(`哥德巴赫联想挂载失败: ${error?.message ?? error}`) }
   const orderPolicy = createPolicy({
     path: join(homedir(), '.dsh', 'dsh-dafeiyu-director-policy.json'),
     actions: ORDERS.map((order) => order.id),
     logger,
   })
-  const director = createDirector({ ctx, policy: orderPolicy, logger })
+  const director = createDirector({ ctx, policy: orderPolicy, goldbach, logger })
   try { registerDirectorTool(ctx, { director, logger }) } catch (error) { logger.error?.(`调度台工具挂载失败: ${error?.message ?? error}`) }
   // 动作学习：从视频里学"小动作"，生成新的动作帧（scripts/learn-motion.py）
   const motionTool = {
@@ -1689,31 +1692,37 @@ export function apply(ctx, config = {}) {
     parameters: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['learn', 'scene', 'pose'] },
+        action: { type: 'string', enum: ['learn', 'scene', 'pose', 'rhythm'] },
         video: { type: 'string', description: '视频文件路径' },
         name: { type: 'string', description: '动作名（默认 learned / pose）' },
         intensity: { type: 'number', description: '动作幅度倍数（默认 1.0，0.3–3.0）' },
+        gaps: { type: 'string', description: 'rhythm 时的节奏序列，如 "1,2,3,4"' },
       },
       required: ['action'],
       additionalProperties: false,
     },
     output: { schema: { type: 'object', properties: { ok: { type: 'boolean' }, summary: { type: 'string' } }, additionalProperties: true }, render: (_a, v) => [{ type: 'text', text: v.summary ?? '' }] },
     async execute(args) {
-      if (!['learn', 'scene', 'pose'].includes(args.action)) throw new Error('只支持 learn / scene / pose')
+      if (!['learn', 'scene', 'pose', 'rhythm'].includes(args.action)) throw new Error('只支持 learn / scene / pose / rhythm')
       const video = String(args.video ?? '').trim()
-      if (!video) throw new Error('缺少 video 路径')
+      if (args.action !== 'rhythm' && !video) throw new Error('缺少 video 路径')
       const name = String(args.name ?? 'learned').replace(/[^\w.-]/g, '') || 'learned'
       // 姿态估计需要 OpenCV：优先用装好 mediapipe 的 venv，其次回退到内置 Python
       const poseVenv = join(homedir(), 'Downloads', 'dfy', 'pose-venv', 'bin', 'python')
       const python = args.action === 'pose' && existsSync(poseVenv)
         ? poseVenv
         : (await findPython({ logger })).bin
-      const scriptName = args.action === 'scene' ? 'learn-scene.py' : args.action === 'pose' ? 'learn-pose.py' : 'learn-motion.py'
+      const scriptName = args.action === 'scene' ? 'learn-scene.py'
+        : args.action === 'pose' ? 'learn-pose.py'
+          : args.action === 'rhythm' ? 'gen-rhythm.py'
+            : 'learn-motion.py'
       const script = join(dirname(new URL(import.meta.url).pathname), '..', 'scripts', scriptName)
       const ffmpeg = await findFfmpeg({ logger }).catch(() => '')
       const { spawn } = await import('node:child_process')
       const output = await new Promise((resolve, reject) => {
-        const scriptArgs = [script, video, name]
+        const scriptArgs = args.action === 'rhythm'
+          ? [script, name || 'rhythm', String(args.gaps ?? '1,2,3')]
+          : [script, video, name]
         if (args.action === 'pose' && Number.isFinite(Number(args.intensity))) scriptArgs.push('--intensity', String(args.intensity))
         const child = spawn(python, scriptArgs, { env: { ...process.env, DFY_FFMPEG: ffmpeg || process.env.DFY_FFMPEG || '' } })
         let stdout = ''
@@ -1724,6 +1733,9 @@ export function apply(ctx, config = {}) {
         child.on('exit', (code) => code === 0 ? resolve(stdout) : reject(new Error(stderr.slice(-500) || `退出码 ${code}`)))
       })
       const result = JSON.parse(output.trim().split('\n').pop())
+      if (args.action === 'rhythm') {
+        return { ok: true, ...result, summary: `节奏动作「${result.clip}」：${result.frames} 帧，节奏 ${result.gaps.join(',')}` }
+      }
       if (args.action === 'pose') {
         return { ok: true, ...result, summary: `已用骨骼点学会动作「${result.clip}」：${result.frames} 帧（最激烈窗口 ${result.window.join('–')}，强度 ${result.intensity}）` }
       }
@@ -1740,8 +1752,6 @@ export function apply(ctx, config = {}) {
   else registerMotion(ctx)
   const permMemory = createPermMemory({ logger })
   try { registerPermMemoryTool(ctx, { memory: permMemory, logger }) } catch (error) { logger.error?.(`矩阵记忆挂载失败: ${error?.message ?? error}`) }
-  const goldbach = createGoldbachMemory({ logger })
-  try { registerGoldbachTool(ctx, { goldbach, logger }) } catch (error) { logger.error?.(`哥德巴赫联想挂载失败: ${error?.message ?? error}`) }
   const skills = createSkillStore({ memory: permMemory, logger })
   try { registerSkillTool(ctx, { skills, logger }) } catch (error) { logger.error?.(`技能库挂载失败: ${error?.message ?? error}`) }
   const selfTool = createSelfTool({ logger })

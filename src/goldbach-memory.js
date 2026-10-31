@@ -169,6 +169,33 @@ export function createGoldbachMemory({ path = GOLDBACH_PATH, logger = console } 
     return { path, steps, rhythm }
   }
 
+  // 按"和"分族：a+b = n 的记忆对归到同一族，族的丰富度就是素数对数
+  const families = (limit = 6) => {
+    const keys = Object.keys(data.nodes)
+    const bySum = new Map()
+    for (let i = 0; i < keys.length; i += 1) {
+      for (let j = i + 1; j < keys.length; j += 1) {
+        const a = data.nodes[keys[i]].prime
+        const b = data.nodes[keys[j]].prime
+        const n = a + b
+        const list = bySum.get(n) ?? []
+        list.push({ a: keys[i], b: keys[j], primeA: a, primeB: b, partitions: partitions(n) })
+        bySum.set(n, list)
+      }
+    }
+    return [...bySum.entries()]
+      .map(([sum, pairs]) => ({ sum, size: pairs.length, partitions: pairs[0]?.partitions ?? 0, pairs }))
+      .sort((m, n) => n.partitions - m.partitions || n.size - m.size)
+      .slice(0, limit)
+  }
+
+  // 从一条链的节奏生成动作名（供动画使用）
+  const rhythmClipName = (key, length = 6) => {
+    const result = chain(key, length)
+    const signature = result.rhythm.join('-') || '0'
+    return { clip: `rhythm_${signature.replace(/-/g, '_')}`, rhythm: result.rhythm, path: result.path }
+  }
+
   const stats = () => ({
     nodes: Object.keys(data.nodes).length,
     primes: PRIMES.length,
@@ -177,7 +204,7 @@ export function createGoldbachMemory({ path = GOLDBACH_PATH, logger = console } 
     sample: Object.entries(data.nodes).slice(0, 5).map(([key, node]) => ({ key, prime: node.prime })),
   })
 
-  return { register, link, neighbors, chain, stats, beat, primeOf, path }
+  return { register, link, neighbors, chain, families, rhythmClipName, stats, beat, primeOf, path }
 }
 
 const text = (value) => [{ type: 'text', text: value }]
@@ -189,7 +216,7 @@ export function registerGoldbachTool(ctx, { goldbach, logger = console } = {}) {
     parameters: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['register', 'link', 'neighbors', 'chain', 'stats'] },
+        action: { type: 'string', enum: ['register', 'link', 'neighbors', 'chain', 'families', 'rhythm', 'stats'] },
         a: { type: 'string' },
         b: { type: 'string' },
         text: { type: 'string' },
@@ -211,6 +238,14 @@ export function registerGoldbachTool(ctx, { goldbach, logger = console } = {}) {
       if (args.action === 'neighbors') {
         const edges = goldbach.neighbors(args.a)
         return { ok: true, edges, summary: edges.map((edge) => `${edge.to}(素数 ${edge.primeB}, 强度 ${edge.strength})`).join('、') || '没有邻居' }
+      }
+      if (args.action === 'families') {
+        const families = goldbach.families()
+        return { ok: true, families, summary: families.map((family) => `和 ${family.sum}（${family.partitions} 种素数对，${family.size} 对记忆）`).join('；') || '节点太少' }
+      }
+      if (args.action === 'rhythm') {
+        const result = goldbach.rhythmClipName(args.a, Number(args.length) || 6)
+        return { ok: true, ...result, summary: `节奏动作：${result.clip}\n链：${result.path.join(' → ')}\n节奏：${result.rhythm.join(',')}` }
       }
       if (args.action === 'chain') {
         const result = goldbach.chain(args.a, Number(args.length) || 6)

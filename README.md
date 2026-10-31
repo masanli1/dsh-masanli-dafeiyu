@@ -1152,3 +1152,11 @@ Lv.4 不再只是光晕，而是一整套「劈刀」演出（每帧程序化绘
 
 工具 `goldbach`（register/link/neighbors/chain/stats），端点 `/debug/goldbach`；
 生活记忆写入时会自动登记为节点。
+
+## 三条完善（chat.116–120）
+
+1. **节奏驱动动画**：`scripts/gen-rhythm.py` 把联想链接的间距序列变成弹跳动作
+   （每个间距 = 一次"点"，幅度 ∝ 间距），工具 `motion action=rhythm gaps=1,2,3,4 name=...`；
+2. **按"和"分族**：`goldbach action=families`，同一 `p₁+p₂` 的记忆对归一族，族的丰富度=素数对数；
+3. **接进导演层**：新增指令 `associate`，用联想链动态拼 prompt；
+   并修复评估 bug——只统计下发之后的新事件（之前会读到上一轮的旧回答）。
