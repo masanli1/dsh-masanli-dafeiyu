@@ -70,7 +70,7 @@ export const PET_WORKSPACE = join(homedir(), 'Documents', '大肥鱼聊天')
 
 import { rememberFacts } from './memory-auto.js'
 
-export function createChatService({ ctx, logger = console, config = () => ({}), storePath = CHAT_STORE, memory, mood, emote, policy, perception, onUserMessage, onPlan, reasonHistory, stageContext } = {}) {
+export function createChatService({ ctx, logger = console, config = () => ({}), storePath = CHAT_STORE, memory, mood, emote, policy, perception, onUserMessage, onPlan, reasonHistory, stageContext, onEntropy } = {}) {
   const sessions = new Map()
   let targetId
   let manualTarget = ''
@@ -268,12 +268,15 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
     try {
       observation = await query.observeSession(id)
       const title = String(observation?.header?.title ?? observation?.header?.name ?? '').trim() || fallbackTitle
+      const messages = messagesFromEvents(observation?.events)
+      // 每次读状态时顺手采一次 SAN 熵（供状态卡画曲线）
+      try { onEntropy?.(messages) } catch {}
       return {
         sessionId: id,
         title,
         busy: record?.busy === true,
         sessions: list,
-        messages: messagesFromEvents(observation?.events),
+        messages,
       }
     } catch (error) {
       return { sessionId: id, title: fallbackTitle, busy: record?.busy === true, sessions: list, messages: [], error: error?.message ?? String(error) }

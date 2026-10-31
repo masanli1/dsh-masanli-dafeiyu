@@ -1536,3 +1536,9 @@ SAN 熵：当前 2.585 / 历史 2.302 → 梯度 0.283
 - 原生状态卡读该文件画熵曲线（下一步）；
 - 修复：`entropyWatch` 原先声明在路由注册之后，启动早期的请求会撞 TDZ（报 `entropyWatch is not defined`），
   现在移到 `mountCompanion` 最前面。
+
+## 状态卡显示熵曲线（chat.167）
+
+- 每次读对话状态时采一次 SAN 熵（`onEntropy`），写入 `~/.dsh/dsh-dafeiyu-entropy.json`（最近 40 个采样）；
+- 原生状态卡：详情行显示「熵 X.XX bit · SAN」，下方画 16pt 高的小折线（蓝紫色）；
+- 采样节流：4 秒内的多次读取只更新最后一个点，避免曲线被高频轮询刷平。

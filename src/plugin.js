@@ -444,6 +444,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   const FEED = /(吃饭|喂你|给你吃|零食|喝点)/
   const chat = createChatService({ ctx, logger, config: () => settings.get(), memory: config.memoryStore, mood, emote: config.emote, policy: config.policy, perception: config.perception, onUserMessage: config.onUserMessage,
     stageContext: async (message) => (await config.stages?.contextForAsync?.(message)) ?? '',
+    onEntropy: (messages) => { try { config.entropyWatch?.record?.(messages) } catch {} },
     onPlan: (plan) => { try { config.chains?.add?.('think', { text: `打算回答「${plan.user}」：风格 ${plan.styleHint}`, relation: 'hypothesis' }) } catch {} },
     reasonHistory: (message) => {
       try {

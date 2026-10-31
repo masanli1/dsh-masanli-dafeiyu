@@ -397,6 +397,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var hunger: Double = 0
     var evoLevel: Int = 0
     var evoStage: String = "初生"
+    var entropySeries: [Double] = []
+    var entropyCurrent: Double = -1
     var trainingPercent: Double = -1
     var trainingPhase: String = ""
     var sparkPhase: Double = 0
@@ -500,7 +502,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fetchMood()
         fetchEvolution()
         fetchTraining()
-        Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in self.fetchMood(); self.fetchEvolution(); self.fetchTraining() }
+        fetchEntropy()
+        Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in self.fetchMood(); self.fetchEvolution(); self.fetchTraining(); self.fetchEntropy() }
         Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in self.watchDenoise() }
         startStdin()
         respond("ready")
@@ -742,6 +745,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSColor(calibratedRed: 0.35, green: 0.65, blue: 1.0, alpha: 1).setFill()
             NSBezierPath(roundedRect: filled, xRadius: 2, yRadius: 2).fill()
         }
+        if entropySeries.count >= 2 {
+            let chart = NSRect(x: card.minX + 14, y: card.minY + 20, width: card.width - 28, height: 16)
+            NSColor(calibratedWhite: 0.95, alpha: 1).setFill()
+            NSBezierPath(roundedRect: chart, xRadius: 3, yRadius: 3).fill()
+            let path = NSBezierPath()
+            let maxValue = max(1.0, entropySeries.max() ?? 1)
+            let stepX = chart.width / CGFloat(max(1, entropySeries.count - 1))
+            for (index, value) in entropySeries.enumerated() {
+                let x = chart.minX + CGFloat(index) * stepX
+                let y = chart.minY + chart.height * CGFloat(min(1, max(0, value / maxValue)))
+                if index == 0 { path.move(to: NSPoint(x: x, y: y)) } else { path.line(to: NSPoint(x: x, y: y)) }
+            }
+            path.lineWidth = 1.4
+            NSColor(calibratedRed: 0.45, green: 0.55, blue: 0.95, alpha: 1).setStroke()
+            path.stroke()
+        }
         if !lastTasksText.isEmpty {
             let rightAttrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 11.5),
@@ -751,6 +770,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let size = text.size(withAttributes: rightAttrs)
             text.draw(at: NSPoint(x: card.maxX - 16 - size.width, y: card.minY + 32), withAttributes: rightAttrs)
         }
+    }
+
+    func fetchEntropy() {
+        let path = NSHomeDirectory() + "/.dsh/dsh-dafeiyu-entropy.json"
+        guard let data = FileManager.default.contents(atPath: path),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        entropyCurrent = (object["current"] as? Double) ?? -1
+        if let series = object["series"] as? [Double], !series.isEmpty {
+            entropySeries = Array(series.suffix(40))
+        }
+        petView.needsDisplay = true
     }
 
     func fetchTraining() {
@@ -1155,6 +1185,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func statusDetail() -> String {
+        if entropyCurrent >= 0 {
+            return String(format: "熵 %.2f bit · %@", entropyCurrent, trainingPercent >= 0 ? trainingPhase : "SAN")
+        }
         if trainingPercent >= 0 {
             return String(format: "训练 %.0f%% · %@", trainingPercent, trainingPhase)
         }
