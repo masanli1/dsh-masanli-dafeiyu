@@ -32,6 +32,8 @@ import { createGoldbachMemory, registerGoldbachTool } from './goldbach-memory.js
 import { createMus, registerMusTool } from './mus.js'
 import { createMeta, registerMetaTool } from './meta.js'
 import { createCrtMemory, registerCrtTool } from './crt-memory.js'
+import { createTheory, registerTheoryTool } from './theory.js'
+import { createChainStore, registerChainTool } from './chains.js'
 import { createPerception, registerPerceptionTool } from './perception.js'
 import { createDistributed, registerDistTool } from './distributed.js'
 import { spawn } from 'node:child_process'
@@ -628,7 +630,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       const interval = (Number(live?.directorIntervalMinutes) || 45) * 60000
       if (Date.now() - lastDirectorAt < interval) return
       lastDirectorAt = Date.now()
-      Promise.resolve(config.director?.runOnce?.({ reason: 'auto' })).catch(() => {})
+      Promise.resolve(config.runDirectorWithChain?.({ reason: 'auto' })).catch(() => {})
     } catch {}
   }, 60000)
   if (typeof directorTimer.unref === 'function') directorTimer.unref()
@@ -1136,7 +1138,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
           handler: (req, res) => {
             if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
             const order = new URL(req.url ?? '/', 'http://127.0.0.1').searchParams.get('order') ?? ''
-            Promise.resolve(config.director?.runOnce?.({ reason: 'http', forceOrder: order }))
+            Promise.resolve(config.runDirectorWithChain?.({ reason: 'http', forceOrder: order }))
               .then((result) => jsonResponse(res, 200, result ?? {}))
               .catch((error) => jsonResponse(res, 500, { error: String(error?.message ?? error) }))
           },
@@ -1782,6 +1784,30 @@ export function apply(ctx, config = {}) {
   const dist = createDistributed({ nodes: distNodes, shards: 4, logger })
   try { registerDistTool(ctx, { dist, logger }) } catch (error) { logger.error?.(`分布式存储挂载失败: ${error?.message ?? error}`) }
 
+  const chains = createChainStore({ logger })
+  try { registerChainTool(ctx, { chains, logger }) } catch (error) { logger.error?.(`三链挂载失败: ${error?.message ?? error}`) }
+
+  // 调度台每跑一单，自动记一条推理链
+  const runDirectorWithChain = async (options = {}) => {
+    try {
+      chains.open('reason', options.reason ?? '自动调度')
+      chains.add('reason', { text: `触发方式：${options.reason ?? 'auto'}${options.forceOrder ? `，指定指令：${options.forceOrder}` : ''}`, relation: 'premise' })
+    } catch {}
+    try {
+      const result = await director?.runOnce?.(options)
+      try {
+        chains.add('reason', { text: `执行 ${result?.order ?? '未知'}：${result?.ok ? '成功' : '失败'}（奖励 ${result?.reward ?? 0}）`, relation: 'conclusion' })
+        chains.close('reason')
+      } catch {}
+      return result
+    } catch (error) {
+      try { chains.add('reason', { text: `执行异常：${error?.message ?? error}`, relation: 'conclusion' }); chains.close('reason') } catch {}
+      throw error
+    }
+  }
+
+  const theory = createTheory({ logger })
+  try { registerTheoryTool(ctx, { theory, logger }) } catch (error) { logger.error?.(`理论记忆挂载失败: ${error?.message ?? error}`) }
   const crt = createCrtMemory({ logger })
   try { registerCrtTool(ctx, { crt, logger }) } catch (error) { logger.error?.(`CRT 编码挂载失败: ${error?.message ?? error}`) }
   const meta = createMeta({ logger })
@@ -1875,6 +1901,9 @@ export function apply(ctx, config = {}) {
     director,
     meta,
     crt,
+    theory,
+    chains,
+    runDirectorWithChain,
     perception,
     dist,
     orderPolicy,

@@ -1363,3 +1363,17 @@ NeRF / 3DGS（NGRF 一类）是从**多视角图片**重建三维，需要 40–
 - 这是"有厚度的浮雕"，**不是真体积**；背面是镜像贴图，不是后脑勺；
 - 没有内部结构，侧看是薄片（厚度约宽度 0.35）；
 - TripoSR 这条路走不通：依赖 torchmcubes（只有 CUDA 实现），M4 上编译失败。
+
+## 三条链：思考 / 推理 / 联想（chat.144–146）
+
+`src/chains.js`
+
+| 链 | 记录什么 | 谁写入 |
+|---|---|---|
+| **think** | 假设 → 检查 → 结论（自己的思路） | 工具 `chain`（手动或对话中） |
+| **reason** | 触发 → 执行 → 结果+奖励 | 调度台每跑一单**自动记录** |
+| **associate** | 记忆之间的联想边（素数周期） | 工具 `chain` / 联想功能 |
+
+- 每个节点带 `relation`（start/premise/conclusion/hypothesis/check/associate）；
+- 链持久化在 `~/.dsh/dsh-dafeiyu-chains.json`，可 `show` / `replay` 回放；
+- 实测：调度单自动生成「触发方式 → 执行 routine_check：成功（奖励 1）」。
