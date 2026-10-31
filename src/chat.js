@@ -70,7 +70,7 @@ export const PET_WORKSPACE = join(homedir(), 'Documents', '大肥鱼聊天')
 
 import { rememberFacts } from './memory-auto.js'
 
-export function createChatService({ ctx, logger = console, config = () => ({}), storePath = CHAT_STORE, memory, mood, emote, policy, onUserMessage } = {}) {
+export function createChatService({ ctx, logger = console, config = () => ({}), storePath = CHAT_STORE, memory, mood, emote, policy, perception, onUserMessage } = {}) {
   const sessions = new Map()
   let targetId
   let manualTarget = ''
@@ -330,6 +330,10 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
       if (config()?.contextInjection === false) return ''
       const parts = [PERSONA]
       if (styleHint) parts.push(styleHint)
+      try {
+        const seen = perception?.summary?.()
+        if (seen) parts.push(`当前感知：${seen}`)
+      } catch {}
       const remembered = memory?.summary?.()
       if (remembered) parts.push(`长期记忆：\n${remembered}`)
       // 只排除宠物会话本身；targetId 可能是某个工作会话（turn/start 时更新），不能一起排除。

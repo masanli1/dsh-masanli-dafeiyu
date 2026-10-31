@@ -1222,3 +1222,18 @@ Lv.4 不再只是光晕，而是一整套「劈刀」演出（每帧程序化绘
    （实测同时改坏第 2、6 位，仍完整恢复 98765432）；
 3. **近似去重**：`crt action=sketch text=... textB=...` 用余数素描算距离
    （同义改写 0.294 vs 无关 0.529），可作为去重的粗筛。
+
+## 主动感知 + 分布式存储（chat.130–132）
+
+### 感知（`src/perception.js`）
+
+- 每 30 秒采样一次：**前台应用**（osascript）、**剪贴板长度/哈希**（默认不读内容）、空闲秒数；
+- 摘要会注入聊天上下文（"当前感知：前台应用：Xcode；剪贴板有 975 字"）；
+- 工具 `perception`：now / recent / stats / start / stop，`includeClipboard` 可选读内容。
+
+### 分布式存储（`src/distributed.js`）
+
+- 记忆 JSON 切成 4 片，每片 sha256 校验，复制到多个节点（本地目录 / NAS / HTTP PUT）；
+- `put` 写入、`get` 按哈希校验重组、`verify` 报告各节点健康度、`repair` 从健康节点补片；
+- 工具 `dist`：put / get / verify / repair / stats；
+- 实测：A/B 两节点 4/4 → 删 B 的 shard-2 → verify 3/4 → repair 修复 → 4/4，内容完整取回。

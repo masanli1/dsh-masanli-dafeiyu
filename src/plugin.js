@@ -32,6 +32,8 @@ import { createGoldbachMemory, registerGoldbachTool } from './goldbach-memory.js
 import { createMus, registerMusTool } from './mus.js'
 import { createMeta, registerMetaTool } from './meta.js'
 import { createCrtMemory, registerCrtTool } from './crt-memory.js'
+import { createPerception, registerPerceptionTool } from './perception.js'
+import { createDistributed, registerDistTool } from './distributed.js'
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { existsSync as fileExists, readFileSync as readFileSyncImpl, readdirSync as readdirSyncImpl } from 'node:fs'
@@ -131,6 +133,8 @@ export const Config = Schema.object({
     url: Schema.string().default('').description('webhook 或推送地址'),
     token: Schema.string().default('').description('PushPlus 的 token（其他类型可留空）'),
   })).default([]).description('消息推送 webhook：企业微信/飞书/钉钉/Slack 群机器人地址'),
+  perceptionEnabled: Schema.boolean().default(true).description('主动感知：前台应用/剪贴板状态（只读元信息）'),
+  perceptionIntervalSec: Schema.number().min(5).max(600).step(5).default(30).description('感知采样间隔（秒）'),
   denoiseWatchEnabled: Schema.boolean().default(true).description('盯着 NAS 降噪批处理，把进度显示到状态卡上'),
   denoiseWatchDir: Schema.string().default('/Volumes/15226550291/课程').description('降噪批处理所在目录'),
   musicOnDone: Schema.boolean().default(true).description('降噪批处理全部完成后自动放一首音乐'),
@@ -150,6 +154,8 @@ for (const [key, field] of Object.entries(Config.dict)) Config.dict[key] = field
 const defaults = Object.freeze({
   directorEnabled: true,
   directorIntervalMinutes: 45,
+  perceptionEnabled: true,
+  perceptionIntervalSec: 30,
   enabled: true,
   scale: 1,
   bubbleScale: 1,
@@ -411,7 +417,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   if (typeof moodTimer.unref === 'function') moodTimer.unref()
   const PRAISE = /(可爱|好乖|真棒|厉害|喜欢你|好看|漂亮|聪明|谢谢大肥鱼|辛苦了)/
   const FEED = /(吃饭|喂你|给你吃|零食|喝点)/
-  const chat = createChatService({ ctx, logger, config: () => settings.get(), memory: config.memoryStore, mood, emote: config.emote, policy: config.policy, onUserMessage: config.onUserMessage })
+  const chat = createChatService({ ctx, logger, config: () => settings.get(), memory: config.memoryStore, mood, emote: config.emote, policy: config.policy, perception: config.perception, onUserMessage: config.onUserMessage })
   const chatHandlers = createChatHandlers(chat, logger)
   const ffmpegCandidates = () => [
     process.env.DF_FACTORY_FFMPEG,
@@ -1755,6 +1761,19 @@ export function apply(ctx, config = {}) {
       logger.info?.(`dsh-dafeiyu: 探索率应用为 ${rate}`)
     } catch (error) { logger.warn?.(`应用探索率失败: ${error?.message ?? error}`) }
   }, 3000)
+  const perception = createPerception({ logger, intervalMs: (Number(config.perceptionIntervalSec) || 30) * 1000 })
+  try {
+    registerPerceptionTool(ctx, { perception, logger })
+    if (config.perceptionEnabled !== false) perception.start({})
+  } catch (error) { logger.error?.(`感知挂载失败: ${error?.message ?? error}`) }
+
+  const distNodes = [
+    { name: 'local', type: 'file', path: join(homedir(), '.dsh', 'dsh-dafeiyu-nodes', 'local') },
+    { name: 'nas', type: 'file', path: '/Volumes/15226550291/大肥鱼记忆' },
+  ]
+  const dist = createDistributed({ nodes: distNodes, shards: 4, logger })
+  try { registerDistTool(ctx, { dist, logger }) } catch (error) { logger.error?.(`分布式存储挂载失败: ${error?.message ?? error}`) }
+
   const crt = createCrtMemory({ logger })
   try { registerCrtTool(ctx, { crt, logger }) } catch (error) { logger.error?.(`CRT 编码挂载失败: ${error?.message ?? error}`) }
   const meta = createMeta({ logger })
@@ -1848,6 +1867,8 @@ export function apply(ctx, config = {}) {
     director,
     meta,
     crt,
+    perception,
+    dist,
     orderPolicy,
     selfTool,
     permMemory,
