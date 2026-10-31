@@ -35,6 +35,7 @@ import { createCrtMemory, registerCrtTool } from './crt-memory.js'
 import { createTheory, registerTheoryTool } from './theory.js'
 import { createChainStore, registerChainTool } from './chains.js'
 import { createDrive, registerDriveTool } from './drive.js'
+import { createLayers, registerLayerTool } from './layers.js'
 import { createPerception, registerPerceptionTool } from './perception.js'
 import { createDistributed, registerDistTool } from './distributed.js'
 import { spawn } from 'node:child_process'
@@ -1859,6 +1860,8 @@ export function apply(ctx, config = {}) {
     }
   }
 
+  const layers = createLayers({ chains, policy, config: {}, logger })
+  try { registerLayerTool(ctx, { layers, logger }) } catch (error) { logger.error?.(`三层分工挂载失败: ${error?.message ?? error}`) }
   const drive = createDrive({ chains, logger })
   try { registerDriveTool(ctx, { drive, logger }) } catch (error) { logger.error?.(`驱动链挂载失败: ${error?.message ?? error}`) }
   const theory = createTheory({ logger })
@@ -1959,6 +1962,7 @@ export function apply(ctx, config = {}) {
     theory,
     chains,
     drive,
+    layers,
     runDirectorWithChain,
     perception,
     dist,

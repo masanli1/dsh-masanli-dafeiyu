@@ -39,6 +39,12 @@ export function chaosLayer({ seed = 0.4, length = 1024, buckets = 16, targetEntr
     stream.push(x)
     window.push(x)
   }
+  // 收尾：把最后一个不完整窗口也算进去，短序列也能给出熵
+  if (window.length > 0) {
+    const hist = new Array(buckets).fill(0)
+    for (const value of window) hist[Math.min(buckets - 1, Math.floor(value * buckets))] += 1
+    entropies.push(shannonEntropy(hist))
+  }
   return { stream, entropies, r }
 }
 
