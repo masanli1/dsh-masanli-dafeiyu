@@ -52,6 +52,19 @@ function partitions(n) {
   return count
 }
 
+// CRT 余数距离：两个数在互素模数下的"结构性差异"，与语义无关
+const CRT_MODULI = [3, 5, 7, 11, 13]
+function crtDistance(a, b) {
+  let total = 0
+  let max = 0
+  for (const m of CRT_MODULI) {
+    const diff = Math.abs((a % m) - (b % m))
+    total += diff
+    max += m - 1
+  }
+  return max ? Number((total / max).toFixed(4)) : 0
+}
+
 const gcd = (a, b) => (b === 0 ? a : gcd(b, a % b))
 const lcm = (a, b) => (a * b) / gcd(a, b)
 
@@ -127,14 +140,15 @@ export function createGoldbachMemory({ path = GOLDBACH_PATH, logger = console } 
     const sumPartitions = partitions(a.prime + b.prime)
     // 综合强度：语义为主，周期耦合调制，再乘哥德巴赫丰富度
     const richness = 1 + Math.min(1, sumPartitions / 4)
-    const strength = Number((semantic * (0.5 + coupling) * richness).toFixed(4))
+    const distance = crtDistance(a.prime, b.prime)
+    const strength = Number((semantic * (0.5 + coupling) * richness * (1.1 - 0.2 * distance)).toFixed(4))
     return {
       from: keyA, to: keyB,
       primeA: a.prime, primeB: b.prime,
       bridge: stats.bridge, period: stats.period,
       bezout: stats.bezout, semantic: Number(semantic.toFixed(3)),
       coupling: Number(coupling.toFixed(4)),
-      sum: a.prime + b.prime, sumPartitions, strength,
+      sum: a.prime + b.prime, sumPartitions, crtDistance: distance, strength,
       gaps: stats.gaps.slice(0, 8),
     }
   }

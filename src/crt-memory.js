@@ -99,6 +99,30 @@ export function createCrtMemory({ infoCount = 8, checkCount = 2, logger = consol
     }
   }
 
+  // 纠错：单个余数被改坏时，枚举"哪个位置、改成什么"能让校验位全部对上
+  const correct = (residues) => {
+    const verify = (candidate) => {
+      const x = decodeResidues(candidate.slice(0, infoModuli.length), infoModuli)
+      const expected = encode(x)
+      const bad = expected.map((value, index) => (value === candidate[index] ? null : index)).filter((index) => index !== null)
+      return { ok: bad.length === 0, value: x, bad }
+    }
+    const direct = verify(residues)
+    if (direct.ok) return { ok: true, corrected: false, value: direct.value.toString() }
+    for (let index = 0; index < infoModuli.length; index += 1) {
+      for (let value = 0; value < Number(infoModuli[index]); value += 1) {
+        if (value === residues[index]) continue
+        const candidate = [...residues]
+        candidate[index] = value
+        const result = verify(candidate)
+        if (result.ok) {
+          return { ok: true, corrected: true, index, was: residues[index], now: value, value: result.value.toString() }
+        }
+      }
+    }
+    return { ok: false, corrected: false }
+  }
+
   const stats = () => ({
     infoModuli: infoModuli.map(Number),
     checkModuli: checkModuli.map(Number),
@@ -107,7 +131,7 @@ export function createCrtMemory({ infoCount = 8, checkCount = 2, logger = consol
     redundancy: checkCount,
   })
 
-  return { encode, decode, verify, stats, moduli: allModuli, infoModuli, checkModuli, packFields, unpackFields }
+  return { encode, decode, verify, correct, stats, moduli: allModuli, infoModuli, checkModuli, packFields, unpackFields }
 }
 
 const text = (value) => [{ type: 'text', text: value }]
@@ -119,7 +143,7 @@ export function registerCrtTool(ctx, { crt, logger = console } = {}) {
     parameters: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['encode', 'decode', 'verify', 'stats', 'pack'] },
+        action: { type: 'string', enum: ['encode', 'decode', 'verify', 'correct', 'stats', 'pack'] },
         value: { type: 'string', description: '要编码的整数（十进制字符串）' },
         residues: { type: 'array', items: { type: 'number' }, description: 'decode/verify 时的余数' },
         fields: { type: 'array', items: { type: 'number' }, description: 'pack 时的字段值' },
@@ -133,6 +157,16 @@ export function registerCrtTool(ctx, { crt, logger = console } = {}) {
       if (args.action === 'encode') {
         const residues = crt.encode(args.value)
         return { ok: true, residues, summary: `余数：${residues.join(', ')}（模数 ${crt.moduli.map(Number).join(',')}）` }
+      }
+      if (args.action === 'correct') {
+        const result = crt.correct(args.residues ?? [])
+        return {
+          ok: result.ok,
+          ...result,
+          summary: result.ok
+            ? (result.corrected ? `已纠正：第 ${result.index} 位 ${result.was} → ${result.now}，真值 ${result.value}` : `无需纠正，真值 ${result.value}`)
+            : '无法纠正（错误超过 1 位）',
+        }
       }
       if (args.action === 'decode' || args.action === 'verify') {
         const result = args.action === 'verify' ? crt.verify(args.residues) : { value: crt.decode(args.residues).toString() }

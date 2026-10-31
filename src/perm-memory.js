@@ -40,6 +40,14 @@ export function rankOf(permutation) {
   return rank
 }
 
+// CRT 分片：用排列前两位 Lehmer 数字做桶号（12 阶 → 12×11=132 个桶）
+export function shardOf(entry, n = 10) {
+  const digits = entry.inversion ?? []
+  const first = digits[0] ?? 0
+  const second = digits[1] ?? 0
+  return first * n + second
+}
+
 export function inversionOf(permutation) {
   const n = permutation.length
   const out = []
@@ -106,11 +114,27 @@ export function createPermMemory({ path = PERM_PATH, order = 10, logger = consol
       at: Date.now(),
     }
     entry.surges = inversion.reduce((sum, value) => sum + value, 0)
+    entry.shard = shardOf(entry, data.order)
     data.entries.push(entry)
     data.surges += entry.surges
     index.set(id, entry)
     save()
     return entry
+  }
+
+  // 按分片并行扫描（只扫同一桶）
+  const recallInShard = (key) => {
+    const id = String(key ?? '').trim()
+    const hit = index.get(id)
+    if (hit) return hit
+    for (let step = 0; step < 256; step += 1) {
+      const rank = probe(id, step)
+      const { inversion } = unrank(rank, data.order)
+      const shard = (inversion[0] ?? 0) * data.order + (inversion[1] ?? 0)
+      const found = data.entries.find((entry) => entry.shard === shard && entry.key === id)
+      if (found) return found
+    }
+    return null
   }
 
   const recall = (key) => {
@@ -156,7 +180,13 @@ export function createPermMemory({ path = PERM_PATH, order = 10, logger = consol
 
   const list = (limit = 20) => data.entries.slice(-limit).map((entry) => ({ key: entry.key, text: entry.text, rank: entry.rank, at: entry.at }))
 
-  return { remember, recall, expand, stats, list, path }
+  const shardStats = () => {
+    const buckets = new Map()
+    for (const entry of data.entries) buckets.set(entry.shard ?? 0, (buckets.get(entry.shard ?? 0) ?? 0) + 1)
+    return { shards: buckets.size, avgPerShard: Number((data.entries.length / Math.max(1, buckets.size)).toFixed(2)), totalShards: data.order * (data.order - 1) }
+  }
+
+  return { remember, recall, recallInShard, expand, stats, list, shardStats, path }
 }
 
 const text = (value) => [{ type: 'text', text: value }]
