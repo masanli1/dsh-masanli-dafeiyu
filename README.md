@@ -1237,3 +1237,11 @@ Lv.4 不再只是光晕，而是一整套「劈刀」演出（每帧程序化绘
 - `put` 写入、`get` 按哈希校验重组、`verify` 报告各节点健康度、`repair` 从健康节点补片；
 - 工具 `dist`：put / get / verify / repair / stats；
 - 实测：A/B 两节点 4/4 → 删 B 的 shard-2 → verify 3/4 → repair 修复 → 4/4，内容完整取回。
+
+## NAS 作为存储节点（chat.133）
+
+- 节点：`local`（`~/.dsh/dsh-dafeiyu-nodes/local`）+ `nas`（`/Volumes/15226550291/大肥鱼记忆`）；
+- `scripts/sync-memory.mjs`：把 14 类记忆文件打包 → 切 4 片（sha256）→ 双节点各存 4/4；
+- LaunchAgent `com.ma.dfy-sync`：**每 30 分钟 + 开机**自动同步，日志 `/tmp/dfy-sync.log`；
+- `scripts/restore-memory.mjs`：灾难恢复，只从 NAS 读最新快照写回本机；
+- 实测：13 个文件快照 → 双节点 4/4；只留 NAS 节点也能完整取回 13 个文件。
