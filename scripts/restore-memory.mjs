@@ -35,7 +35,7 @@ const dist = createDistributed({
   statePath,
   logger: { warn() {} },
 })
-const payload = await dist.get(latest)
+const payload = await dist.fetch(latest)
 let restored = 0
 for (const [key, relative] of Object.entries(TARGETS)) {
   if (!payload.files?.[key]) continue

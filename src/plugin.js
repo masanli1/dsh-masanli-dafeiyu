@@ -408,7 +408,15 @@ function mount(ctx, config = {}, eventCtx = ctx) {
 
 function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   const eventStream = createEventStream()
-  const settings = createSettingsScope(ctx, Config, config, publicConfig)
+  // 只把"纯配置"交给 settings 作用域：运行时服务对象里有 .get 之类的方法，
+  // 会被 plainConfig 误当成 settings 解包（曾导致整个 App 启动失败）。
+  const SERVICE_KEYS = [
+    'memoryStore', 'policy', 'orderPolicy', 'director', 'meta', 'selfTool', 'permMemory', 'skills',
+    'goldbach', 'mus', 'crt', 'perception', 'dist', 'routine', 'english', 'evolution', 'emote', 'onUserMessage',
+  ]
+  const plainInput = { ...config }
+  for (const key of SERVICE_KEYS) delete plainInput[key]
+  const settings = createSettingsScope(ctx, Config, plainInput, publicConfig)
   const mood = createMoodStore({ logger })
   const initialMood = mood.snapshot()
   if (!initialMood.met) { try { mood.poke('seen') } catch {} }

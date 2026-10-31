@@ -107,7 +107,7 @@ export function createDistributed({ nodes = [], shards = 4, statePath = DIST_PAT
     return { id, ...manifest, okNodes: Object.entries(manifest.replicates).filter(([, list]) => list.length === shards).length }
   }
 
-  const get = async (id) => {
+  const fetchShards = async (id) => {
     const manifest = state.manifests[id]
     if (!manifest) throw new Error('没有这个清单')
     const buffers = []
@@ -170,7 +170,8 @@ export function createDistributed({ nodes = [], shards = 4, statePath = DIST_PAT
 
   const stats = () => ({ nodes: nodes.map((node) => node.name), shards, manifests: Object.keys(state.manifests).length })
 
-  return { put, get, verify, repair, remove, list, stats, state }
+  // 注意：不能叫 get —— DSH 的 plainConfig 会把带 .get 的对象当成 settings 解包
+  return { put, fetch: fetchShards, verify, repair, remove, list, stats, state }
 }
 
 const text = (value) => [{ type: 'text', text: value }]
@@ -197,7 +198,7 @@ export function registerDistTool(ctx, { dist, logger = console } = {}) {
         return { ok: true, ...result, summary: `已分片复制：${result.id}（${result.okNodes}/${dist.stats().nodes.length} 个节点完整）` }
       }
       if (args.action === 'get') {
-        const payload = await dist.get(args.id)
+        const payload = await dist.fetch(args.id)
         return { ok: true, payload, summary: `取回成功：${JSON.stringify(payload).slice(0, 120)}` }
       }
       if (args.action === 'verify') {

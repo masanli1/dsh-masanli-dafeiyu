@@ -1264,3 +1264,15 @@ Lv.4 不再只是光晕，而是一整套「劈刀」演出（每帧程序化绘
   - **通用密码**（原有记录，代码默认读取）；
 - `getOrCreateKey()` 依次尝试 通用 → 互联网，保证老机器/新机器都能拿到同一把钥匙。
 - 查看方式：打开「密码」App → 搜索 `dsh-dafeiyu-dist`。
+
+## 启动崩溃修复（chat.136）
+
+崩溃原因：`plainConfig` 会把**任何带 `.get()` 的对象**当成 settings 解包。
+`createDistributed()` 返回的对象上有 `get`，于是 `config.get()` 被调用 → 抛错 → 整个 App 启动失败。
+
+修复：
+1. `dist.get` 改名 **`dist.fetch`**；
+2. `mountCompanion` 在创建 settings 作用域前，**剥离所有运行时服务对象**
+   （dist / perception / crt / mus / meta / skills / goldbach / policy …），只把纯配置传进去。
+
+教训：**不要给"塞进 config 的对象"起 `get` 这种和 settings 重名的方法。**
