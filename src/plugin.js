@@ -39,6 +39,7 @@ import { createLayers, registerLayerTool } from './layers.js'
 import { createStageLibrary, registerStageTool } from './stages.js'
 import { registerTurnTool } from './turns.js'
 import { createEntropyWatch } from './entropy-watch.js'
+import { createBookReader, registerBookReaderTool } from './book-reader.js'
 import { createPerception, registerPerceptionTool } from './perception.js'
 import { createDistributed, registerDistTool } from './distributed.js'
 import { spawn } from 'node:child_process'
@@ -1884,6 +1885,8 @@ export function apply(ctx, config = {}) {
   try { registerDistTool(ctx, { dist, logger }) } catch (error) { logger.error?.(`分布式存储挂载失败: ${error?.message ?? error}`) }
 
   const entropyWatch = createEntropyWatch()
+  const books = createBookReader({ logger })
+  try { registerBookReaderTool(ctx, { books, logger }) } catch (error) { logger.error?.(`读书工具挂载失败: ${error?.message ?? error}`) }
   const chains = createChainStore({ logger })
   try { registerChainTool(ctx, { chains, logger }) } catch (error) { logger.error?.(`三链挂载失败: ${error?.message ?? error}`) }
 
