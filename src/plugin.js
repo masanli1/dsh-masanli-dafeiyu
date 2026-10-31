@@ -424,7 +424,7 @@ function mount(ctx, config = {}, eventCtx = ctx) {
 function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
   const eventStream = createEventStream()
   // 路由在挂载早期就注册了，变量必须在最前面声明（否则请求可能在 TDZ 期间到达）
-  const entropyWatch = createEntropyWatch()
+  const entropyWatch = config.entropyWatch ?? createEntropyWatch()
   // 只把"纯配置"交给 settings 作用域：运行时服务对象里有 .get 之类的方法，
   // 会被 plainConfig 误当成 settings 解包（曾导致整个 App 启动失败）。
   const SERVICE_KEYS = [
@@ -1883,6 +1883,7 @@ export function apply(ctx, config = {}) {
   const dist = createDistributed({ nodes: distNodes, shards: 4, encryptionKey: readDistKey(), logger })
   try { registerDistTool(ctx, { dist, logger }) } catch (error) { logger.error?.(`分布式存储挂载失败: ${error?.message ?? error}`) }
 
+  const entropyWatch = createEntropyWatch()
   const chains = createChainStore({ logger })
   try { registerChainTool(ctx, { chains, logger }) } catch (error) { logger.error?.(`三链挂载失败: ${error?.message ?? error}`) }
 
