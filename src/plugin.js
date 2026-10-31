@@ -28,6 +28,7 @@ import { createDirector, registerDirectorTool, ORDERS } from './director.js'
 import { createSelfTool, registerSelfTool } from './selftool.js'
 import { createPermMemory, registerPermMemoryTool } from './perm-memory.js'
 import { createSkillStore, registerSkillTool } from './skills.js'
+import { createGoldbachMemory, registerGoldbachTool } from './goldbach-memory.js'
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { existsSync as fileExists, readFileSync as readFileSyncImpl, readdirSync as readdirSyncImpl } from 'node:fs'
@@ -686,6 +687,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       lifeLogged.set(kind, day)
       store.add(stamp, text)
       try { config.permMemory?.remember?.(stamp, text) } catch {}
+      try { config.goldbach?.register?.(stamp, text) } catch {}
       logger.info?.(`dsh-dafeiyu 生活记忆: ${stamp} = ${text}`)
     } catch {}
   }
@@ -975,6 +977,17 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({ kind: 'exact', path: CHAT_TARGET_ENDPOINT, handler: chatHandlers.target }),
         'dsh-dafeiyu: local chat target endpoint',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
+          path: '/plugins/dsh-dafeiyu/debug/goldbach',
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            try { jsonResponse(res, 200, config.goldbach?.stats?.() ?? {}) } catch (error) { jsonResponse(res, 500, { error: String(error?.message ?? error) }) }
+          },
+        }),
+        'dsh-dafeiyu: goldbach debug',
       )
       httpCtx.effect(
         () => httpCtx.webServer.register({
@@ -1727,6 +1740,8 @@ export function apply(ctx, config = {}) {
   else registerMotion(ctx)
   const permMemory = createPermMemory({ logger })
   try { registerPermMemoryTool(ctx, { memory: permMemory, logger }) } catch (error) { logger.error?.(`矩阵记忆挂载失败: ${error?.message ?? error}`) }
+  const goldbach = createGoldbachMemory({ logger })
+  try { registerGoldbachTool(ctx, { goldbach, logger }) } catch (error) { logger.error?.(`哥德巴赫联想挂载失败: ${error?.message ?? error}`) }
   const skills = createSkillStore({ memory: permMemory, logger })
   try { registerSkillTool(ctx, { skills, logger }) } catch (error) { logger.error?.(`技能库挂载失败: ${error?.message ?? error}`) }
   const selfTool = createSelfTool({ logger })
@@ -1749,6 +1764,7 @@ export function apply(ctx, config = {}) {
     selfTool,
     permMemory,
     skills,
+    goldbach,
     routine,
     english,
     evolution,
