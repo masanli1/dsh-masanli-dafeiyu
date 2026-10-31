@@ -194,7 +194,7 @@ export function createPermMemory({ path = PERM_PATH, order = 10, logger = consol
   }
 
   const expand = (delta = 2) => {
-    data.order = Math.min(14, data.order + delta)
+    data.order = Math.min(17, data.order + delta)
     // 重新编码已有记忆（排列变长，轨迹信息保留）
     for (const entry of data.entries) {
       const { permutation, inversion } = unrank(entry.rank % capacityOf(data.order), data.order)
@@ -209,6 +209,7 @@ export function createPermMemory({ path = PERM_PATH, order = 10, logger = consol
   const stats = () => ({
     order: data.order,
     capacity: capacityOf(data.order),
+    collisionBound: Math.floor(Math.sqrt(capacityOf(data.order))),
     used: data.entries.length,
     load: Number((data.entries.length / capacityOf(data.order) * 100).toFixed(6)),
     surges: data.surges,
