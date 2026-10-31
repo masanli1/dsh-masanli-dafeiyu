@@ -1,8 +1,8 @@
 // 分布式存储：把记忆文件切成 N 片，各自带哈希，复制到多个节点。
 // 节点可以是本地目录、NAS 路径，或任何支持 PUT/GET 的 HTTP 端点。
 // 任一节点丢片，可用其它节点修复。
-import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, unlinkSync } from 'node:fs'
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, unlinkSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 
@@ -10,7 +10,7 @@ export const DIST_PATH = join(homedir(), '.dsh', 'dsh-dafeiyu-dist.json')
 
 const sha = (buffer) => createHash('sha256').update(buffer).digest('hex').slice(0, 16)
 
-export function createDistributed({ nodes = [], shards = 4, statePath = DIST_PATH, logger = console } = {}) {
+export function createDistributed({ nodes = [], shards = 4, statePath = DIST_PATH, encryptionKey = null, logger = console } = {}) {
   let state = { manifests: {} }
   try { state = { ...state, ...JSON.parse(readFileSync(statePath, 'utf8')) } } catch {}
 
@@ -23,6 +23,25 @@ export function createDistributed({ nodes = [], shards = 4, statePath = DIST_PAT
 
   const fileNodes = () => nodes.filter((node) => node.type !== 'http')
 
+  // AES-256-GCM：iv(12) + tag(16) + 密文；哈希仍按明文算，便于校验
+  const seal = (buffer) => {
+    if (!encryptionKey) return buffer
+    const iv = randomBytes(12)
+    const cipher = createCipheriv('aes-256-gcm', encryptionKey, iv)
+    const body = Buffer.concat([cipher.update(buffer), cipher.final()])
+    return Buffer.concat([Buffer.from('DFY1'), iv, cipher.getAuthTag(), body])
+  }
+  const open = (buffer) => {
+    if (!encryptionKey) return buffer
+    if (buffer.subarray(0, 4).toString() !== 'DFY1') return buffer
+    const iv = buffer.subarray(4, 16)
+    const tag = buffer.subarray(16, 32)
+    const body = buffer.subarray(32)
+    const decipher = createDecipheriv('aes-256-gcm', encryptionKey, iv)
+    decipher.setAuthTag(tag)
+    return Buffer.concat([decipher.update(body), decipher.final()])
+  }
+
   const writeShard = async (node, id, index, buffer) => {
     if (node.type === 'http') {
       const response = await fetch(`${node.url.replace(/\/$/, '')}/shard/${id}/${index}`, {
@@ -33,7 +52,7 @@ export function createDistributed({ nodes = [], shards = 4, statePath = DIST_PAT
     }
     const dir = join(node.path, id)
     mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, `shard-${index}.bin`), buffer)
+    writeFileSync(join(dir, `shard-${index}.bin`), seal(buffer))
   }
 
   const readShard = async (node, id, index) => {
@@ -44,8 +63,30 @@ export function createDistributed({ nodes = [], shards = 4, statePath = DIST_PAT
     }
     const file = join(node.path, id, `shard-${index}.bin`)
     if (!existsSync(file)) throw new Error('缺少分片')
-    return readFileSync(file)
+    return open(readFileSync(file))
   }
+
+  const remove = async (id) => {
+    const manifest = state.manifests[id]
+    if (!manifest) return false
+    for (const node of nodes) {
+      if (node.type === 'http') continue
+      try {
+        const dir = join(node.path, id)
+        if (existsSync(dir)) {
+          for (const file of readdirSync(dir)) unlinkSync(join(dir, file))
+          rmSync(dir, { recursive: true, force: true })
+        }
+      } catch (error) { logger.warn?.(`dsh-dafeiyu dist: 删除 ${node.name}/${id} 失败: ${error?.message ?? error}`) }
+    }
+    delete state.manifests[id]
+    save()
+    return true
+  }
+
+  const list = (name = '') => Object.values(state.manifests)
+    .filter((manifest) => !name || manifest.name === name)
+    .sort((a, b) => a.at - b.at)
 
   const put = async (name, payload) => {
     const buffer = Buffer.from(JSON.stringify(payload, null, 2))
@@ -129,7 +170,7 @@ export function createDistributed({ nodes = [], shards = 4, statePath = DIST_PAT
 
   const stats = () => ({ nodes: nodes.map((node) => node.name), shards, manifests: Object.keys(state.manifests).length })
 
-  return { put, get, verify, repair, stats, state }
+  return { put, get, verify, repair, remove, list, stats, state }
 }
 
 const text = (value) => [{ type: 'text', text: value }]

@@ -5,6 +5,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createDistributed } from '../src/distributed.js'
+import { getOrCreateKey } from '../src/keychain.js'
+import { prune } from '../src/retention.js'
 
 const FILES = [
   ['perm-memory', '.dsh/dsh-dafeiyu-perm-memory.json'],
@@ -29,7 +31,11 @@ const NODES = [
 ]
 mkdirSync(NODES[0].path, { recursive: true })
 
-const dist = createDistributed({ nodes: NODES, shards: 4, statePath: join(homedir(), '.dsh', 'dsh-dafeiyu-dist.json') })
+const encryptionKey = getOrCreateKey({ logger: console })
+const dist = createDistributed({
+  nodes: NODES, shards: 4, encryptionKey,
+  statePath: join(homedir(), '.dsh', 'dsh-dafeiyu-dist.json'),
+})
 
 const payload = { at: new Date().toISOString(), host: process.env.HOSTNAME ?? 'mac', files: {} }
 for (const [name, relative] of FILES) {
@@ -46,4 +52,5 @@ if (process.argv.includes('--verify')) {
 
 const result = await dist.put('memory', payload)
 const verified = await dist.verify()
-console.log(JSON.stringify({ id: result.id, snapshotFiles: Object.keys(payload.files).length, nodes: result.okNodes, verify: verified }, null, 2))
+const retention = prune(dist, { keep: 30, monthly: 1 })
+console.log(JSON.stringify({ id: result.id, snapshotFiles: Object.keys(payload.files).length, nodes: result.okNodes, encrypted: Boolean(encryptionKey), retention, verify: verified }, null, 2))

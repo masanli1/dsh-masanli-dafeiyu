@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { createDistributed } from '../src/distributed.js'
+import { getOrCreateKey } from '../src/keychain.js'
 
 const TARGETS = {
   'perm-memory': '.dsh/dsh-dafeiyu-perm-memory.json',
@@ -30,6 +31,7 @@ const latest = ids[ids.length - 1]
 
 const dist = createDistributed({
   nodes: [{ name: 'nas', type: 'file', path: '/Volumes/15226550291/大肥鱼记忆' }],
+  encryptionKey: getOrCreateKey({ logger: { info() {}, warn() {} } }),
   statePath,
   logger: { warn() {} },
 })

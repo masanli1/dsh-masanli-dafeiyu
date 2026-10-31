@@ -1245,3 +1245,14 @@ Lv.4 不再只是光晕，而是一整套「劈刀」演出（每帧程序化绘
 - LaunchAgent `com.ma.dfy-sync`：**每 30 分钟 + 开机**自动同步，日志 `/tmp/dfy-sync.log`；
 - `scripts/restore-memory.mjs`：灾难恢复，只从 NAS 读最新快照写回本机；
 - 实测：13 个文件快照 → 双节点 4/4；只留 NAS 节点也能完整取回 13 个文件。
+
+## 加密与保留策略（chat.134）
+
+- **AES-256-GCM**：每个分片写入前加密，格式 `DFY1 | iv(12) | tag(16) | 密文`；
+  哈希仍按明文算，所以校验不受影响；旧明文分片仍可读（向后兼容）。
+- **密钥**：`security` 存钥匙串（service `dsh-dafeiyu-dist`，account `ma`），首次自动生成 32 字节。
+- **保留策略**（`src/retention.js`）：最近 30 份原样保留，更早的按月份组，每月只留最新 1 份。
+- `scripts/sync-memory.mjs` 每次同步后自动执行 prune；`--verify` 只校验不写。
+- `scripts/restore-memory.mjs` 从 NAS 取最新快照并解密写回本机。
+
+> 重要：密钥在本机钥匙串里。电脑彻底损坏时，**没有密钥就无法解密 NAS 上的备份**——需提前把密钥另存。
