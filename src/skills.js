@@ -4,6 +4,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { writeJsonAtomic } from './atomic.js'
 
 export const SKILLS_PATH = join(homedir(), '.dsh', 'dsh-dafeiyu-skills.json')
 const PROMOTE_AT = 3
@@ -34,7 +35,7 @@ export function createSkillStore({ path = SKILLS_PATH, memory, threshold = 0.5, 
   const save = () => {
     try {
       mkdirSync(dirname(path), { recursive: true })
-      writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`)
+      writeJsonAtomic(path, data)
     } catch (error) { logger.warn?.(`dsh-dafeiyu skills: 写入失败: ${error?.message ?? error}`) }
   }
 

@@ -3,6 +3,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { writeJsonAtomic } from './atomic.js'
 
 export const RL_PATH = join(homedir(), '.dsh', 'dsh-dafeiyu-rl.json')
 
@@ -52,7 +53,7 @@ export function createPolicy({ path = RL_PATH, epsilon = 0.35, explorationFloor 
   const save = () => {
     try {
       mkdirSync(dirname(path), { recursive: true })
-      writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`)
+      writeJsonAtomic(path, data)
     } catch (error) { logger.warn?.(`dsh-dafeiyu rl: 写入失败: ${error?.message ?? error}`) }
   }
 

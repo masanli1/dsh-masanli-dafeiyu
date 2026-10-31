@@ -2,6 +2,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { writeJsonAtomic } from './atomic.js'
 
 export const MEMORY_PATH = join(homedir(), 'Documents', '大肥鱼记忆.json')
 
@@ -17,7 +18,7 @@ export function createMemoryStore({ path = MEMORY_PATH, logger = console } = {})
   const save = () => {
     try {
       mkdirSync(dirname(path), { recursive: true })
-      writeFileSync(path, `${JSON.stringify({ items }, null, 2)}\n`)
+      writeJsonAtomic(path, { items })
     } catch (error) {
       logger.warn?.(`dsh-dafeiyu memory: 写入失败: ${error?.message ?? error}`)
     }

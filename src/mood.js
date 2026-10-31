@@ -3,6 +3,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { writeJsonAtomic } from './atomic.js'
 
 export const MOOD_PATH = join(homedir(), '.dsh', 'dsh-dafeiyu-mood.json')
 
@@ -37,7 +38,7 @@ export function createMoodStore({ path = MOOD_PATH, now = () => Date.now(), logg
     try {
       mkdirSync(dirname(path), { recursive: true })
       state.updatedAt = new Date(now()).toISOString()
-      writeFileSync(path, `${JSON.stringify(state, null, 2)}\n`)
+      writeJsonAtomic(path, state)
     } catch (error) {
       logger.warn?.(`dsh-dafeiyu mood: 写入失败: ${error?.message ?? error}`)
     }

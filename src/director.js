@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { writeJsonAtomic } from './atomic.js'
 
 export const DIRECTOR_PATH = join(homedir(), '.dsh', 'dsh-dafeiyu-director.json')
 const WORKSPACE = join(homedir(), 'Documents', '大肥鱼工作台')
@@ -56,7 +57,7 @@ export function createDirector({ ctx, policy, goldbach, logger = console, orders
   const save = () => {
     try {
       mkdirSync(dirname(DIRECTOR_PATH), { recursive: true })
-      writeFileSync(DIRECTOR_PATH, `${JSON.stringify(store, null, 2)}\n`)
+      writeJsonAtomic(DIRECTOR_PATH, store)
     } catch (error) { logger.warn?.(`dsh-dafeiyu director: 写入失败: ${error?.message ?? error}`) }
   }
 

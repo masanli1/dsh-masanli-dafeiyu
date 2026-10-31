@@ -6,6 +6,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { writeJsonAtomic } from './atomic.js'
 
 export const MUS_PATH = join(homedir(), '.dsh', 'dsh-dafeiyu-mus.json')
 
@@ -34,7 +35,7 @@ export function createMus({ path = MUS_PATH, logger = console } = {}) {
   const save = () => {
     try {
       mkdirSync(dirname(path), { recursive: true })
-      writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`)
+      writeJsonAtomic(path, data)
     } catch (error) { logger.warn?.(`dsh-dafeiyu mus: 写入失败: ${error?.message ?? error}`) }
   }
 

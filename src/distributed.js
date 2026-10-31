@@ -5,6 +5,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, unlinkSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
+import { writeJsonAtomic } from './atomic.js'
 
 export const DIST_PATH = join(homedir(), '.dsh', 'dsh-dafeiyu-dist.json')
 
@@ -17,7 +18,7 @@ export function createDistributed({ nodes = [], shards = 4, statePath = DIST_PAT
   const save = () => {
     try {
       mkdirSync(dirname(statePath), { recursive: true })
-      writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`)
+      writeJsonAtomic(statePath, state)
     } catch (error) { logger.warn?.(`dsh-dafeiyu dist: 写入失败: ${error?.message ?? error}`) }
   }
 

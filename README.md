@@ -1276,3 +1276,23 @@ Lv.4 不再只是光晕，而是一整套「劈刀」演出（每帧程序化绘
    （dist / perception / crt / mus / meta / skills / goldbach / policy …），只把纯配置传进去。
 
 教训：**不要给"塞进 config 的对象"起 `get` 这种和 settings 重名的方法。**
+
+## 原子写入 + 多文档存储（chat.137）
+
+### 原子写入（`src/atomic.js`）
+
+所有 store 的 `save()` 都改成：**写临时文件 → fsync → rename 覆盖**。
+断电/崩溃不会留下半个 JSON（此前直接 writeFileSync，写到一半会损坏）。
+
+### 多文档存储
+
+`perm-memory` 条目超过 500 时自动切换成：
+
+```
+~/.dsh/dsh-dafeiyu-perm-memory.d/part-0001.json
+                                 part-0002.json ...
+```
+
+- 只在内容变化时重写对应分片（内存里比对序列化结果）；
+- 启动时合并所有分片；分片数减少会自动删除多余文件；
+- 实测：1200 条 → 3 个分片，重新加载 1200 条，`recall` 正常。

@@ -3,6 +3,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { writeJsonAtomic } from './atomic.js'
 
 export const SELFTOOL_PATH = join(homedir(), '.dsh', 'dsh-dafeiyu-selftool.json')
 
@@ -38,7 +39,7 @@ export function createSelfTool({ path = SELFTOOL_PATH, threshold = 0.42, limit =
     try {
       mkdirSync(dirname(path), { recursive: true })
       const trimmed = { ...data, pairs: data.pairs.slice(-limit) }
-      writeFileSync(path, `${JSON.stringify(trimmed, null, 2)}\n`)
+      writeJsonAtomic(path, trimmed)
     } catch (error) { logger.warn?.(`dsh-dafeiyu selftool: 写入失败: ${error?.message ?? error}`) }
   }
 

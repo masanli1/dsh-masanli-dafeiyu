@@ -1,9 +1,10 @@
 // 矩阵记忆：用"逆序数（Lehmer 码）"把记忆编码进排列。
 // 一个 n 阶排列有 n! 种，逆序数向量就是它的轨迹；展开逆序数 = 逐位读出记忆。
 // 容量随 n 阶乘增长：n=10 → 362 万，n=12 → 4.79 亿，n=14 → 871 亿。
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { writeJsonAtomic } from './atomic.js'
 
 export const PERM_PATH = join(homedir(), '.dsh', 'dsh-dafeiyu-perm-memory.json')
 
@@ -69,14 +70,56 @@ function hashKey(key) {
   return hash
 }
 
+const PART_SIZE = 500
+
 export function createPermMemory({ path = PERM_PATH, order = 10, logger = console } = {}) {
   let data = { order, entries: [], surges: 0 }
-  try { data = { ...data, ...JSON.parse(readFileSync(path, 'utf8')) } } catch {}
+  const partsDir = `${path}.d`
+  try {
+    if (existsSync(partsDir)) {
+      // 多文档模式：读取全部 part-*.json 合并
+      const files = readdirSync(partsDir).filter((file) => file.endsWith('.json')).sort()
+      const merged = []
+      let meta = {}
+      for (const file of files) {
+        const part = JSON.parse(readFileSync(join(partsDir, file), 'utf8'))
+        if (part.__meta) meta = part
+        merged.push(...(part.entries ?? []))
+      }
+      data = { ...data, ...meta, entries: merged }
+      delete data.__meta
+    } else {
+      data = { ...data, ...JSON.parse(readFileSync(path, 'utf8')) }
+    }
+  } catch {}
 
+  const written = new Map()
   const save = () => {
     try {
       mkdirSync(dirname(path), { recursive: true })
-      writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`)
+      // 条目少时写单文件；多时自动切成多文档，只重写变化的分片
+      if (data.entries.length <= PART_SIZE) {
+        writeJsonAtomic(path, data)
+        return
+      }
+      mkdirSync(partsDir, { recursive: true })
+      const total = Math.ceil(data.entries.length / PART_SIZE)
+      for (let index = 0; index < total; index += 1) {
+        const part = {
+          __meta: { order: data.order, surges: data.surges, part: index + 1, total },
+          entries: data.entries.slice(index * PART_SIZE, (index + 1) * PART_SIZE),
+        }
+        const text = JSON.stringify(part)
+        const name = `part-${String(index + 1).padStart(4, '0')}.json`
+        if (written.get(name) !== text) {
+          writeJsonAtomic(join(partsDir, name), part)
+          written.set(name, text)
+        }
+      }
+      for (const file of readdirSync(partsDir)) {
+        const index = Number(/part-(\d+)\.json/.exec(file)?.[1] ?? 0)
+        if (index > total) { try { rmSync(join(partsDir, file)) } catch {} }
+      }
     } catch (error) { logger.warn?.(`dsh-dafeiyu perm-memory: 写入失败: ${error?.message ?? error}`) }
   }
 

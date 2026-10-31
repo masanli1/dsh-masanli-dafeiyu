@@ -2,6 +2,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { writeJsonAtomic } from './atomic.js'
 
 export const ROUTINE_PATH = join(homedir(), '.dsh', 'dsh-dafeiyu-routine.json')
 
@@ -14,7 +15,7 @@ export function createRoutineStore({ path = ROUTINE_PATH, now = () => new Date()
   const save = () => {
     try {
       mkdirSync(dirname(path), { recursive: true })
-      writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`)
+      writeJsonAtomic(path, data)
     } catch (error) {
       logger.warn?.(`dsh-dafeiyu routine: 写入失败: ${error?.message ?? error}`)
     }
