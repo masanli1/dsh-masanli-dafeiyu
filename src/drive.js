@@ -6,6 +6,8 @@
 //   3. 当前上下文给出 P_now；
 //   4. 商 Q = P_now / P_hist（带平滑）→ 哪个环节被"欠采样"就提示补哪一步；
 //   5. 用 Q 加权选择下一条链/下一步，并记录决策（可审计）。
+import { sanEntropy } from './san.js'
+
 const RELATIONS = ['start', 'premise', 'hypothesis', 'check', 'conclusion', 'associate']
 
 const normalize = (counts) => {
@@ -44,6 +46,31 @@ export function createDrive({ chains, logger = console, smoothing = 0.05 } = {})
     return normalize(counts)
   }
 
+  // SAN 熵画像：每条链节点的 SAN 指纹熵（替代字频熵）
+  const entropyProfile = () => history().map((chain) => ({
+    id: chain.id,
+    kind: chain.kind,
+    entropy: sanEntropy((chain.nodes ?? []).map((node) => node.text ?? '').join('。'), { window: 6 }).entropy,
+    nodes: (chain.nodes ?? []).length,
+  }))
+
+  // 熵梯度：当前熵 vs 历史均值 → 正=还高（该发散），负=已低（该收束）
+  const entropyGradient = () => {
+    const profile = entropyProfile()
+    if (!profile.length) return { current: 0, historical: 0, gradient: 0, samples: 0 }
+    const currentChain = chains?.current?.('reason')
+    const current = currentChain
+      ? sanEntropy((currentChain.nodes ?? []).map((node) => node.text ?? '').join('。'), { window: 6 }).entropy
+      : profile[profile.length - 1].entropy
+    const historical = profile.reduce((sum, item) => sum + item.entropy, 0) / profile.length
+    return {
+      current: Number(current.toFixed(3)),
+      historical: Number(historical.toFixed(3)),
+      gradient: Number((current - historical).toFixed(3)),
+      samples: profile.length,
+    }
+  }
+
   // 商：P_now / P_hist（加平滑），返回缺口最大的环节
   const quotient = (context = '') => {
     const now = currentDistribution(context)
@@ -64,13 +91,28 @@ export function createDrive({ chains, logger = console, smoothing = 0.05 } = {})
     return scores.sort((a, b) => b.gap - a.gap)
   }
 
-  // 下一步建议：商最高（相对历史最缺）的环节
+  // 下一步建议：先看 SAN 熵梯度（该发散还是收束），再用商补齐缺失环节
   const suggest = (context = '') => {
     const scores = quotient(context)
-    return { next: scores[0].relation, scores: scores.slice(0, 3), historical: historicalDistribution() }
+    const entropy = entropyGradient()
+    const diverging = entropy.gradient > 0
+    const preferred = diverging ? ['hypothesis', 'premise'] : ['conclusion', 'check']
+    const ranked = [...scores].sort((a, b) => {
+      const pa = preferred.includes(a.relation) ? 1 : 0
+      const pb = preferred.includes(b.relation) ? 1 : 0
+      if (pa !== pb) return pb - pa
+      return b.gap - a.gap
+    })
+    return {
+      next: ranked[0].relation,
+      scores: ranked.slice(0, 3),
+      historical: historicalDistribution(),
+      entropy,
+      mode: diverging ? '发散（熵高于历史）' : '收束（熵低于历史）',
+    }
   }
 
-  return { suggest, quotient, historicalDistribution, currentDistribution }
+  return { suggest, quotient, historicalDistribution, currentDistribution, entropyProfile, entropyGradient }
 }
 
 const text = (value) => [{ type: 'text', text: value }]
@@ -78,7 +120,7 @@ const text = (value) => [{ type: 'text', text: value }]
 export function registerDriveTool(ctx, { drive, logger = console } = {}) {
   const tool = {
     name: 'drive',
-    description: '驱动链：用"分布之商"（当前分布 ÷ 历史分布）决定下一步该补哪个环节，而不是靠提示词。',
+    description: '驱动链：SAN 熵梯度决定发散/收束，商（当前分布 ÷ 历史分布）决定补哪个环节。',
     parameters: {
       type: 'object',
       properties: { action: { type: 'string', enum: ['suggest', 'status'] }, context: { type: 'string' } },
@@ -89,10 +131,11 @@ export function registerDriveTool(ctx, { drive, logger = console } = {}) {
     async execute(args) {
       if (args.action === 'suggest') {
         const result = drive.suggest(args.context ?? '')
-        return { ok: true, ...result, summary: `下一步建议：${result.next}\n` + result.scores.map((item) => `${item.relation}: 当前 ${item.now} / 历史 ${item.hist} → 商 ${item.quotient}`).join('\n') }
+        return { ok: true, ...result, summary: `下一步建议：${result.next}（${result.mode}）\nSAN 熵：当前 ${result.entropy.current} / 历史 ${result.entropy.historical} → 梯度 ${result.entropy.gradient}\n` + result.scores.map((item) => `${item.relation}: 当前 ${item.now} / 历史 ${item.hist} → 商 ${item.quotient}`).join('\n') }
       }
       const scores = drive.quotient(args.context ?? '')
-      return { ok: true, scores, summary: scores.map((item) => `${item.relation}: 商 ${item.quotient}`).join('\n') }
+      const entropy = drive.entropyGradient()
+      return { ok: true, scores, entropy, summary: `SAN 熵：当前 ${entropy.current} / 历史 ${entropy.historical} → 梯度 ${entropy.gradient}\n` + scores.map((item) => `${item.relation}: 商 ${item.quotient}`).join('\n') }
     },
   }
   const register = (target) => {
