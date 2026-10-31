@@ -198,7 +198,7 @@ export function registerPermMemoryTool(ctx, { memory, logger = console } = {}) {
     parameters: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['remember', 'recall', 'stats', 'expand', 'list'] },
+        action: { type: 'string', enum: ['remember', 'recall', 'stats', 'expand', 'list', 'shards'] },
         key: { type: 'string' },
         text: { type: 'string' },
         delta: { type: 'number', description: 'expand 时增加的阶数（默认 2）' },
@@ -219,6 +219,10 @@ export function registerPermMemoryTool(ctx, { memory, logger = console } = {}) {
       if (args.action === 'expand') {
         const stats = memory.expand(Number(args.delta) || 2)
         return { ok: true, stats, summary: `矩阵扩到 ${stats.order} 阶：容量 ${stats.capacity.toLocaleString()} 条，已用 ${stats.used}` }
+      }
+      if (args.action === 'shards') {
+        const shards = memory.shardStats()
+        return { ok: true, ...shards, summary: `${shards.shards} 个桶在用（共 ${shards.totalShards}），平均 ${shards.avgPerShard} 条/桶` }
       }
       if (args.action === 'list') {
         const items = memory.list()

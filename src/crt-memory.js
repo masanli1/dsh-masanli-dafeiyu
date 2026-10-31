@@ -73,7 +73,32 @@ export function unpackFields(value, ranges) {
   return out
 }
 
-export function createCrtMemory({ infoCount = 8, checkCount = 2, logger = console } = {}) {
+// 文本的余数素描：把字符按位置加权求和后取余（类似 Count-Min 的简化版）
+export function residueSketch(text, moduli = PRIMES.slice(0, 5)) {
+  const value = String(text ?? '')
+  return moduli.map((m) => {
+    let sum = 0n
+    const M = BigInt(m)
+    for (let i = 0; i < value.length; i += 1) {
+      sum = (sum * 131n + BigInt(value.charCodeAt(i)) + BigInt(i)) % M
+    }
+    return Number(sum)
+  })
+}
+
+export function sketchDistance(a, b, moduli = PRIMES.slice(0, 5)) {
+  const sa = residueSketch(a, moduli)
+  const sb = residueSketch(b, moduli)
+  let total = 0
+  let max = 0
+  for (let i = 0; i < moduli.length; i += 1) {
+    total += Math.abs(sa[i] - sb[i])
+    max += Number(moduli[i]) - 1
+  }
+  return { residuesA: sa, residuesB: sb, distance: max ? Number((total / max).toFixed(4)) : 0 }
+}
+
+export function createCrtMemory({ infoCount = 8, checkCount = 3, logger = console } = {}) {
   // 前 infoCount 个模数编码信息，后 checkCount 个做冗余校验
   const infoModuli = PRIMES.slice(0, infoCount)
   const checkModuli = PRIMES.slice(infoCount, infoCount + checkCount)
@@ -108,19 +133,41 @@ export function createCrtMemory({ infoCount = 8, checkCount = 2, logger = consol
       return { ok: bad.length === 0, value: x, bad }
     }
     const direct = verify(residues)
-    if (direct.ok) return { ok: true, corrected: false, value: direct.value.toString() }
+    if (direct.ok) return { ok: true, corrected: false, errors: 0, value: direct.value.toString() }
+
+    const attempt = (candidate, changed) => {
+      const result = verify(candidate)
+      if (!result.ok) return null
+      return { ok: true, corrected: true, errors: changed.length, changed, value: result.value.toString() }
+    }
+
+    // 1 位错误
     for (let index = 0; index < infoModuli.length; index += 1) {
       for (let value = 0; value < Number(infoModuli[index]); value += 1) {
         if (value === residues[index]) continue
         const candidate = [...residues]
         candidate[index] = value
-        const result = verify(candidate)
-        if (result.ok) {
-          return { ok: true, corrected: true, index, was: residues[index], now: value, value: result.value.toString() }
+        const fixed = attempt(candidate, [{ index, was: residues[index], now: value }])
+        if (fixed) return fixed
+      }
+    }
+    // 2 位错误
+    for (let i = 0; i < infoModuli.length; i += 1) {
+      for (let j = i + 1; j < infoModuli.length; j += 1) {
+        for (let vi = 0; vi < Number(infoModuli[i]); vi += 1) {
+          if (vi === residues[i]) continue
+          for (let vj = 0; vj < Number(infoModuli[j]); vj += 1) {
+            if (vj === residues[j]) continue
+            const candidate = [...residues]
+            candidate[i] = vi
+            candidate[j] = vj
+            const fixed = attempt(candidate, [{ index: i, was: residues[i], now: vi }, { index: j, was: residues[j], now: vj }])
+            if (fixed) return fixed
+          }
         }
       }
     }
-    return { ok: false, corrected: false }
+    return { ok: false, corrected: false, errors: -1 }
   }
 
   const stats = () => ({
@@ -143,11 +190,13 @@ export function registerCrtTool(ctx, { crt, logger = console } = {}) {
     parameters: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['encode', 'decode', 'verify', 'correct', 'stats', 'pack'] },
+        action: { type: 'string', enum: ['encode', 'decode', 'verify', 'correct', 'stats', 'pack', 'sketch'] },
         value: { type: 'string', description: '要编码的整数（十进制字符串）' },
         residues: { type: 'array', items: { type: 'number' }, description: 'decode/verify 时的余数' },
         fields: { type: 'array', items: { type: 'number' }, description: 'pack 时的字段值' },
         ranges: { type: 'array', items: { type: 'number' }, description: 'pack 时每个字段的取值范围' },
+        text: { type: 'string', description: 'sketch 时的第一段文本' },
+        textB: { type: 'string', description: 'sketch 时的第二段文本（可选）' },
       },
       required: ['action'],
       additionalProperties: false,
@@ -171,6 +220,10 @@ export function registerCrtTool(ctx, { crt, logger = console } = {}) {
       if (args.action === 'decode' || args.action === 'verify') {
         const result = args.action === 'verify' ? crt.verify(args.residues) : { value: crt.decode(args.residues).toString() }
         return { ok: true, ...result, summary: `重建值：${result.value}` + (result.repaired ? `；第 ${result.repaired.index} 位被改坏（${result.repaired.was}→应为 ${result.repaired.shouldBe}）` : '') }
+      }
+      if (args.action === 'sketch') {
+        const result = args.textB ? sketchDistance(args.text, args.textB) : { residuesA: residueSketch(args.text) }
+        return { ok: true, ...result, summary: `余数素描：${(result.residuesA ?? []).join(',')}` + (result.distance !== undefined ? `；距离 ${result.distance}` : '') }
       }
       if (args.action === 'pack') {
         const packed = crt.packFields(args.fields ?? [], args.ranges ?? [])
