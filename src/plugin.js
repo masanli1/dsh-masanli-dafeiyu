@@ -1885,7 +1885,16 @@ export function apply(ctx, config = {}) {
   try { registerDistTool(ctx, { dist, logger }) } catch (error) { logger.error?.(`分布式存储挂载失败: ${error?.message ?? error}`) }
 
   const entropyWatch = createEntropyWatch()
-  const books = createBookReader({ logger })
+  const books = createBookReader({
+    logger,
+    // 取最近一次感知采样的闲置秒数；没有采样就返回 -1（不触发）
+    idleSeconds: () => {
+      try {
+        const latest = config.perception?.recent?.(1)?.[0]
+        return latest?.idleSeconds ?? -1
+      } catch { return -1 }
+    },
+  })
   try { registerBookReaderTool(ctx, { books, logger }) } catch (error) { logger.error?.(`读书工具挂载失败: ${error?.message ?? error}`) }
   const chains = createChainStore({ logger })
   try { registerChainTool(ctx, { chains, logger }) } catch (error) { logger.error?.(`三链挂载失败: ${error?.message ?? error}`) }

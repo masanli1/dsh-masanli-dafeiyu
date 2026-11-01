@@ -6,7 +6,9 @@ import { join } from 'node:path'
 
 export const MANIFEST = join(homedir(), '.dsh', 'dfy-books-read.json')
 
-export function createBookReader({ logger = console } = {}) {
+export function createBookReader({ logger = console, idleSeconds = () => -1 } = {}) {
+  const IDLE_NEEDED = 300        // 5 分钟没人操作就算"没事干"
+  const MIN_GAP_MINUTES = 20     // 两次读书至少间隔 20 分钟，避免连着读
   let child = null
   let lastRun = 0
 
@@ -26,12 +28,17 @@ export function createBookReader({ logger = console } = {}) {
     return { ok: true, limit }
   }
 
-  // 每 6 小时检查一次：超过 20 小时没读就自动读 3 本
-  const timer = setInterval(() => {
-    if (lastRunAgeHours() > 20) run({ limit: 3 }).catch(() => {})
-  }, 6 * 3600 * 1000)
+  // 没事干就读一本：闲置 ≥5 分钟、且距上次读书 ≥20 分钟
+  const maybeRead = () => {
+    const idle = idleSeconds()
+    const gapMinutes = lastRunAgeHours() * 60
+    if (idle >= IDLE_NEEDED && gapMinutes >= MIN_GAP_MINUTES) {
+      run({ limit: 1 }).catch(() => {})
+    }
+  }
+  const timer = setInterval(maybeRead, 10 * 60 * 1000)
   if (typeof timer.unref === 'function') timer.unref()
-  setTimeout(() => { if (lastRunAgeHours() > 20) run({ limit: 3 }).catch(() => {}) }, 60000)
+  setTimeout(maybeRead, 90000)
 
   const status = () => ({ lastRunHoursAgo: Number(lastRunAgeHours().toFixed(1)), manifest: MANIFEST })
   return { run, status }
