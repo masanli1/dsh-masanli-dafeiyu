@@ -1,6 +1,29 @@
 # Changelog
 
-> This is release history. For installation, use the [latest stable release](https://github.com/QCYTSN/dsh-dafeiyu/releases/latest), not commands from older entries.
+> This is release history. For installation, use the [latest stable release](https://github.com/masanli1/dsh-masanli-dafeiyu/releases/latest).
+
+## 0.2.0 · 2026-11-01
+
+大肥鱼从"会动的桌面宠物"变成"带记忆与知识层的伴侣"。
+
+### Added
+
+- **记忆与知识层**：排列记忆（17 阶、3.56e14 地址）、CRT 校验、哥德巴赫联想、压缩矩阵存储；
+- **SAN 指纹熵**：把文本切成"无重复段"，用 SAD 分布熵作为统一熵度量，替代字频熵；
+- **三条链与驱动链**：推理链（熵驱动）、联想链（时序）、思考链（坐标），驱动链用熵梯度决定发散/收束；
+- **舞台库**：多文档投位 + bge 语义检索（本地桥 `127.0.0.1:18731`），检索结果注入对话；
+- **每日读书**：闲置 ≥5 分钟自动从 Kindle 书库读 1 本，累加语料统计；
+- **单词听力降噪**：每天凌晨 2 点自动批量降噪 300 个（NPSS）；
+- **状态卡进度**：显示读书 / 降噪进度条与 SAN 熵；
+- **抠图与动作生成**：`dfy-seg` 工具（U-Net 抠图，验证 Dice 0.915）+ 纸偶骨骼（头/头发/躯干/四肢 + 肘膝），一张图即可生成 24 帧动作；
+- **表情动作**：从教程视频提取 6 个表情 × 3 种骨骼动作（alive / nod / wave）。
+
+### Fixed
+
+- 插件启动早期路由访问 `entropyWatch` / `progress` 的 TDZ 崩溃（会导致整个插件静默禁用）；
+- 备份校验误报：插件未加载分片密钥，把密文当明文比对，19 个快照全部恢复 4/4；
+- SAN 熵在长文本上饱和（`log2(路径数)`），改为分桶后恢复区分度；
+- 对话测试断言未跟上人设注入（`<dfy-context>`），已更新。
 
 ## 0.1.19 · 2026-10-26
 

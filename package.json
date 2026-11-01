@@ -1,6 +1,6 @@
 {
   "name": "dsh-dafeiyu",
-  "version": "0.1.19-chat.189",
+  "version": "0.2.0",
   "description": "大肥鱼伴侣 + 内置 NPSS 降噪：桌面宠物、页内聊天、本机语音、待机动作与 denoise_audio 工具",
   "author": "QCYTSN",
   "type": "module",
@@ -63,7 +63,7 @@
     "@standard-schema/spec"
   ],
   "scripts": {
-    "test": "node --test --test-timeout=10000 test/*.test.js",
+    "test": "node --test --test-timeout=10000 test/*.test.mjs",
     "test:helper": "node --test test/helper-lifecycle.test.js",
     "test:python": "node scripts/run-python.mjs -m unittest discover -s runtime/tests -t .",
     "helper:headless": "node scripts/run-python.mjs runtime/helper.py --headless",

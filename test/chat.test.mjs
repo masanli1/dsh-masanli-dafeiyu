@@ -106,7 +106,8 @@ const sendResponse = await fetch(`${base}/chat/send`, {
 })
 assert.equal(sendResponse.status, 200)
 assert.equal((await sendResponse.json()).accepted, true)
-assert.equal(prompts.at(-1).content[0].text, '再聊一句')
+// 现在对话前会注入 <dfy-context>（人设/记忆/舞台片段），消息体仍在最后
+assert.ok(prompts.at(-1).content[0].text.includes('再聊一句'))
 
 const getEmpty = await fetch(`${base}/chat/send`)
 assert.equal(getEmpty.status, 400, 'GET without text is rejected')
@@ -114,7 +115,7 @@ assert.equal(getEmpty.status, 400, 'GET without text is rejected')
 const getSend = await fetch(`${base}/chat/send?text=${encodeURIComponent('走 GET 通道')}`)
 assert.equal(getSend.status, 200)
 assert.equal((await getSend.json()).accepted, true)
-assert.equal(prompts.at(-1).content[0].text, '走 GET 通道')
+assert.ok(prompts.at(-1).content[0].text.includes('走 GET 通道'))
 
 const badMethod = await fetch(`${base}/chat/send`, { method: 'PUT' })
 assert.equal(badMethod.status, 405)
