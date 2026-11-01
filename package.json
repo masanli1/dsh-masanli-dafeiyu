@@ -1,6 +1,6 @@
 {
   "name": "dsh-dafeiyu",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "大肥鱼伴侣 + 内置 NPSS 降噪：桌面宠物、页内聊天、本机语音、待机动作与 denoise_audio 工具",
   "author": "QCYTSN",
   "type": "module",
@@ -47,7 +47,8 @@
     "README_EN.md",
     "CHANGELOG.md",
     "ASSET_LICENSE.md",
-    "LICENSE"
+    "LICENSE",
+    "python/seg/"
   ],
   "engines": {
     "node": ">=22.19"

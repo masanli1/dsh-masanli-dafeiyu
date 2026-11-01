@@ -1,11 +1,19 @@
 // 大肥鱼专用：用训练好的 U-Net 给图片抠图，并能直接做成骨骼动画 clip。
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const ROOT = join(homedir(), 'Downloads/dfy')
-export const SEG_PYTHON = join(ROOT, '3d-venv/bin/python')
-const SEG_SCRIPT = join(ROOT, 'seg-train/seg_pet.py')
+const HERE = dirname(fileURLToPath(import.meta.url))
+const PLUGIN = resolve(HERE, '..')
+// 优先用插件内自带的脚本，找不到再回退到开发目录
+const SEG_SCRIPT = existsSync(join(PLUGIN, 'python/seg/seg_pet.py'))
+  ? join(PLUGIN, 'python/seg/seg_pet.py')
+  : join(homedir(), 'Downloads/dfy/seg-train/seg_pet.py')
+export const SEG_PYTHON = process.env.DFY_SEG_PYTHON
+  ?? [join(homedir(), 'Downloads/dfy/3d-venv/bin/python'),
+      '/Users/ma/Downloads/dfy/3d-venv/bin/python'].find(existsSync)
+  ?? 'python3'
 
 export function createSegService({ logger = console } = {}) {
   const call = (args) => new Promise((resolve, reject) => {
