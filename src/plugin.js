@@ -42,6 +42,7 @@ import { createEntropyWatch } from './entropy-watch.js'
 import { createBookReader, registerBookReaderTool } from './book-reader.js'
 import { createWordDenoiser, registerWordDenoiseTool } from './word-denoise.js'
 import { createProgressReporter, PROGRESS_PATH } from './progress.js'
+import { createSegService, registerSegTool } from './seg.js'
 import { createPerception, registerPerceptionTool } from './perception.js'
 import { createDistributed, registerDistTool } from './distributed.js'
 import { spawn } from 'node:child_process'
@@ -1901,6 +1902,8 @@ export function apply(ctx, config = {}) {
   try { registerDistTool(ctx, { dist, logger }) } catch (error) { logger.error?.(`分布式存储挂载失败: ${error?.message ?? error}`) }
 
   const entropyWatch = createEntropyWatch()
+  const seg = createSegService({ logger })
+  try { registerSegTool(ctx, { seg, logger }) } catch (error) { logger.error?.(`抠图工具挂载失败: ${error?.message ?? error}`) }
   const denoiser = createWordDenoiser({ logger })
   try { registerWordDenoiseTool(ctx, { denoiser, logger }) } catch (error) { logger.error?.(`降噪工具挂载失败: ${error?.message ?? error}`) }
   const books = createBookReader({
