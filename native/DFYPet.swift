@@ -397,6 +397,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var hunger: Double = 0
     var evoLevel: Int = 0
     var evoStage: String = "初生"
+    var booksPercent: Double = -1
+    var booksDone: Int = 0
+    var booksTotal: Int = 0
+    var denoisePercent: Double = -1
+    var denoiseDone: Int = 0
+    var denoiseTotal: Int = 0
     var entropySeries: [Double] = []
     var entropyCurrent: Double = -1
     var trainingPercent: Double = -1
@@ -503,7 +509,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fetchEvolution()
         fetchTraining()
         fetchEntropy()
-        Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in self.fetchMood(); self.fetchEvolution(); self.fetchTraining(); self.fetchEntropy() }
+        fetchProgress()
+        Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in self.fetchMood(); self.fetchEvolution(); self.fetchTraining(); self.fetchEntropy(); self.fetchProgress() }
         Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in self.watchDenoise() }
         startStdin()
         respond("ready")
@@ -745,7 +752,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSColor(calibratedRed: 0.35, green: 0.65, blue: 1.0, alpha: 1).setFill()
             NSBezierPath(roundedRect: filled, xRadius: 2, yRadius: 2).fill()
         }
-        if entropySeries.count >= 2 {
+        if booksPercent >= 0 || denoisePercent >= 0 {
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 9, weight: .regular),
+                .foregroundColor: NSColor(calibratedWhite: 0.45, alpha: 1),
+            ]
+            let rowY = card.minY + 17
+            let barW = (card.width - 36) / 2
+            for (index, pair) in [(booksDone, booksTotal, booksPercent, "书"), (denoiseDone, denoiseTotal, denoisePercent, "噪")].enumerated() {
+                let x = card.minX + 14 + CGFloat(index) * (barW + 8)
+                let label = "\(pair.3) \(pair.0)/\(pair.1) · \(String(format: "%.1f", pair.2))%"
+                (label as NSString).draw(at: NSPoint(x: x, y: rowY + 5), withAttributes: attrs)
+                let bar = NSRect(x: x, y: rowY, width: barW, height: 3)
+                NSColor(calibratedWhite: 0.92, alpha: 1).setFill()
+                NSBezierPath(roundedRect: bar, xRadius: 1.5, yRadius: 1.5).fill()
+                let filled = NSRect(x: bar.minX, y: bar.minY, width: max(1, bar.width * CGFloat(min(100, pair.2) / 100)), height: bar.height)
+                NSColor(calibratedRed: 0.35, green: 0.72, blue: 0.55, alpha: 1).setFill()
+                NSBezierPath(roundedRect: filled, xRadius: 1.5, yRadius: 1.5).fill()
+            }
+        }
+        if entropySeries.count >= 2 && booksPercent < 0 && denoisePercent < 0 {
             let chart = NSRect(x: card.minX + 14, y: card.minY + 20, width: card.width - 28, height: 16)
             NSColor(calibratedWhite: 0.95, alpha: 1).setFill()
             NSBezierPath(roundedRect: chart, xRadius: 3, yRadius: 3).fill()
@@ -770,6 +796,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let size = text.size(withAttributes: rightAttrs)
             text.draw(at: NSPoint(x: card.maxX - 16 - size.width, y: card.minY + 32), withAttributes: rightAttrs)
         }
+    }
+
+    func fetchProgress() {
+        let path = NSHomeDirectory() + "/.dsh/dsh-dafeiyu-progress.json"
+        guard let data = FileManager.default.contents(atPath: path),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        if let books = object["books"] as? [String: Any] {
+            booksPercent = (books["percent"] as? Double) ?? -1
+            booksDone = (books["done"] as? Int) ?? 0
+            booksTotal = (books["total"] as? Int) ?? 0
+        }
+        if let denoise = object["denoise"] as? [String: Any] {
+            denoisePercent = (denoise["percent"] as? Double) ?? -1
+            denoiseDone = (denoise["done"] as? Int) ?? 0
+            denoiseTotal = (denoise["total"] as? Int) ?? 0
+        }
+        petView.needsDisplay = true
     }
 
     func fetchEntropy() {

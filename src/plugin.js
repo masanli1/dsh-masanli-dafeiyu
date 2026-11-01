@@ -41,6 +41,7 @@ import { registerTurnTool } from './turns.js'
 import { createEntropyWatch } from './entropy-watch.js'
 import { createBookReader, registerBookReaderTool } from './book-reader.js'
 import { createWordDenoiser, registerWordDenoiseTool } from './word-denoise.js'
+import { createProgressReporter, PROGRESS_PATH } from './progress.js'
 import { createPerception, registerPerceptionTool } from './perception.js'
 import { createDistributed, registerDistTool } from './distributed.js'
 import { spawn } from 'node:child_process'
@@ -74,6 +75,7 @@ export const CHAT_STATE_ENDPOINT = '/plugins/dsh-dafeiyu/chat/state'
 export const CHAT_SEND_ENDPOINT = '/plugins/dsh-dafeiyu/chat/send'
 export const CHAT_TARGET_ENDPOINT = '/plugins/dsh-dafeiyu/chat/target'
 export const ENTROPY_ENDPOINT = '/plugins/dsh-dafeiyu/entropy'
+export const PROGRESS_ENDPOINT = '/plugins/dsh-dafeiyu/progress'
 export { BALANCE_ENDPOINT }
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -1040,6 +1042,17 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
       httpCtx.effect(
         () => httpCtx.webServer.register({
           kind: 'exact',
+          path: PROGRESS_ENDPOINT,
+          handler: (req, res) => {
+            if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
+            try { return jsonResponse(res, 200, progress.snapshot()) } catch (error) { return jsonResponse(res, 500, { error: String(error?.message ?? error) }) }
+          },
+        }),
+        'dsh-dafeiyu: progress endpoint',
+      )
+      httpCtx.effect(
+        () => httpCtx.webServer.register({
+          kind: 'exact',
           path: ENTROPY_ENDPOINT,
           handler: async (req, res) => {
             if (!isLocalRequest(req)) return jsonResponse(res, 403, { error: 'local access only' })
@@ -1886,6 +1899,7 @@ export function apply(ctx, config = {}) {
   try { registerDistTool(ctx, { dist, logger }) } catch (error) { logger.error?.(`分布式存储挂载失败: ${error?.message ?? error}`) }
 
   const entropyWatch = createEntropyWatch()
+  const progress = createProgressReporter({ logger })
   const denoiser = createWordDenoiser({ logger })
   try { registerWordDenoiseTool(ctx, { denoiser, logger }) } catch (error) { logger.error?.(`降噪工具挂载失败: ${error?.message ?? error}`) }
   const books = createBookReader({
