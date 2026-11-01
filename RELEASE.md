@@ -1,4 +1,4 @@
-# 大肥鱼 0.2.0 发布说明
+# 大肥鱼 0.2.1 发布说明
 
 ## 这版多了什么
 
@@ -26,6 +26,19 @@ dsh plugin --profile desktop add file:/path/to/dsh-dafeiyu-0.2.0.tgz
 ```
 
 安装后 **⌘Q 重启** 一次，让原生端加载新的动作清单。
+
+## 抠图模型已内置
+
+```
+python/seg/unet_def.py          模型定义
+python/seg/train_seg.py         训练脚本（BCE+Dice，MPS）
+python/seg/seg_pet.py           推理：matte / clip
+python/seg/puppet2.py           纸偶骨骼
+python/seg/weights/unet_pet.pt  权重 1.9 MB（验证 Dice 0.915）
+python/seg/README.md            训练方式说明
+```
+
+换机器后 `dfy-seg` 依然可用（需要能跑 torch 的 Python）。
 
 ## 已知限制
 
