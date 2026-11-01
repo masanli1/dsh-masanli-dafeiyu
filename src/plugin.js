@@ -40,6 +40,7 @@ import { createStageLibrary, registerStageTool } from './stages.js'
 import { registerTurnTool } from './turns.js'
 import { createEntropyWatch } from './entropy-watch.js'
 import { createBookReader, registerBookReaderTool } from './book-reader.js'
+import { createWordDenoiser, registerWordDenoiseTool } from './word-denoise.js'
 import { createPerception, registerPerceptionTool } from './perception.js'
 import { createDistributed, registerDistTool } from './distributed.js'
 import { spawn } from 'node:child_process'
@@ -1885,6 +1886,8 @@ export function apply(ctx, config = {}) {
   try { registerDistTool(ctx, { dist, logger }) } catch (error) { logger.error?.(`分布式存储挂载失败: ${error?.message ?? error}`) }
 
   const entropyWatch = createEntropyWatch()
+  const denoiser = createWordDenoiser({ logger })
+  try { registerWordDenoiseTool(ctx, { denoiser, logger }) } catch (error) { logger.error?.(`降噪工具挂载失败: ${error?.message ?? error}`) }
   const books = createBookReader({
     logger,
     // 取最近一次感知采样的闲置秒数；没有采样就返回 -1（不触发）

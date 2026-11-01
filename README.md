@@ -1611,3 +1611,12 @@ SAN 熵：当前 2.585 / 历史 2.302 → 梯度 0.283
 - 每次只读 **1 本**，读完更新 manifest；
 - 每 10 分钟检查一次闲置状态（来自 `perception` 的 HIDIdleTime）；
 - 手动触发仍可用：`dfy-read` 工具 `run limit=N`。
+
+## 单词听力降噪自动化（chat.175）
+
+- `src/word-denoise.js`：每天凌晨 **2 点** 自动跑一批 300 个（6 线程）；
+- 跑之前先 `pgrep` 检查，避免两批重叠；
+- 断点续跑由 `manifest.json` 保证，随时可中断；
+- 工具 `dfy-denoise`（status / run limit=300 workers=6）。
+
+当前进度：**302 / 7753**，失败 0，平均 32.3 秒/个。
