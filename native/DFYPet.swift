@@ -685,7 +685,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 复刻原来的状态卡：标题 / 明细 / 余额
     func drawStatusCard(in bounds: NSRect) {
         guard cardVisible else { return }
-        let cardHeight: CGFloat = 84
+        let cardHeight: CGFloat = 104
         let gap: CGFloat = 12
         let card = NSRect(x: 8, y: 344 + gap, width: bounds.width - 16, height: cardHeight)
         let path = NSBezierPath(roundedRect: card, xRadius: 16, yRadius: 16)
@@ -700,13 +700,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .font: NSFont.systemFont(ofSize: 14, weight: .semibold),
             .foregroundColor: NSColor(calibratedWhite: 0.10, alpha: 1),
         ]
-        (title as NSString).draw(at: NSPoint(x: card.minX + 16, y: card.maxY - 30), withAttributes: titleAttrs)
+        (title as NSString).draw(at: NSPoint(x: card.minX + 16, y: card.maxY - 28), withAttributes: titleAttrs)
 
         let detailAttrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 11.5),
             .foregroundColor: NSColor(calibratedWhite: 0.45, alpha: 1),
         ]
-        (statusDetail() as NSString).draw(at: NSPoint(x: card.minX + 16, y: card.maxY - 48), withAttributes: detailAttrs)
+        (statusDetail() as NSString).draw(at: NSPoint(x: card.minX + 16, y: card.maxY - 50), withAttributes: detailAttrs)
 
         if !lastBalanceText.isEmpty {
             let rightAttrs: [NSAttributedString.Key: Any] = [
@@ -715,7 +715,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ]
             let text = "账户 " + lastBalanceText as NSString
             let size = text.size(withAttributes: rightAttrs)
-            text.draw(at: NSPoint(x: card.maxX - 16 - size.width, y: card.minY + 50), withAttributes: rightAttrs)
+            text.draw(at: NSPoint(x: card.maxX - 16 - size.width, y: card.maxY - 28), withAttributes: rightAttrs)
         }
         let hungerText = String(format: "饿 %.0f%% · Lv.%d %@", hunger * 100, evoLevel, evoStage)
         let hungerAttrs: [NSAttributedString.Key: Any] = [
@@ -725,7 +725,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ]
         let hungerString = hungerText as NSString
         let hungerSize = hungerString.size(withAttributes: hungerAttrs)
-        hungerString.draw(at: NSPoint(x: card.maxX - 16 - hungerSize.width, y: card.minY + 12), withAttributes: hungerAttrs)
+        hungerString.draw(at: NSPoint(x: card.maxX - 16 - hungerSize.width, y: card.minY + 10), withAttributes: hungerAttrs)
         // 左下角"🍚 喂食"按钮
         let feedRect = NSRect(x: card.minX + 12, y: card.minY + 8, width: 74, height: 24)
         feedButtonRect = feedRect
@@ -757,7 +757,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 .font: NSFont.systemFont(ofSize: 9, weight: .regular),
                 .foregroundColor: NSColor(calibratedWhite: 0.45, alpha: 1),
             ]
-            let rowY = card.minY + 17
+            let rowY = card.minY + 34
             let barW = (card.width - 36) / 2
             for (index, pair) in [(booksDone, booksTotal, booksPercent, "书"), (denoiseDone, denoiseTotal, denoisePercent, "噪")].enumerated() {
                 let x = card.minX + 14 + CGFloat(index) * (barW + 8)
@@ -772,7 +772,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         if entropySeries.count >= 2 && booksPercent < 0 && denoisePercent < 0 {
-            let chart = NSRect(x: card.minX + 14, y: card.minY + 20, width: card.width - 28, height: 16)
+            let chart = NSRect(x: card.minX + 14, y: card.minY + 34, width: card.width - 28, height: 14)
             NSColor(calibratedWhite: 0.95, alpha: 1).setFill()
             NSBezierPath(roundedRect: chart, xRadius: 3, yRadius: 3).fill()
             let path = NSBezierPath()
@@ -794,7 +794,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ]
             let text = lastTasksText as NSString
             let size = text.size(withAttributes: rightAttrs)
-            text.draw(at: NSPoint(x: card.maxX - 16 - size.width, y: card.minY + 32), withAttributes: rightAttrs)
+            text.draw(at: NSPoint(x: card.maxX - 16 - size.width, y: card.minY + 54), withAttributes: rightAttrs)
         }
     }
 
