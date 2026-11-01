@@ -6311,7 +6311,7 @@
    ],
    "frameMs": 60,
    "loop": true,
-   "source": "rig2d-skeleton"
+   "source": "puppet-rig"
   },
   "fix_alive": {
    "frames": [
@@ -6342,7 +6342,7 @@
    ],
    "frameMs": 60,
    "loop": true,
-   "source": "rig2d-skeleton"
+   "source": "puppet-rig"
   },
   "worried_alive": {
    "frames": [
@@ -6373,7 +6373,7 @@
    ],
    "frameMs": 60,
    "loop": true,
-   "source": "rig2d-skeleton"
+   "source": "puppet-rig"
   },
   "toast_alive": {
    "frames": [
@@ -6404,7 +6404,7 @@
    ],
    "frameMs": 60,
    "loop": true,
-   "source": "rig2d-skeleton"
+   "source": "puppet-rig"
   },
   "read_alive": {
    "frames": [
@@ -6435,7 +6435,7 @@
    ],
    "frameMs": 60,
    "loop": true,
-   "source": "rig2d-skeleton"
+   "source": "puppet-rig"
   },
   "greet_alive": {
    "frames": [
@@ -6466,7 +6466,7 @@
    ],
    "frameMs": 60,
    "loop": true,
-   "source": "rig2d-skeleton"
+   "source": "puppet-rig"
   },
   "shout_alive": {
    "frames": [
@@ -6497,7 +6497,7 @@
    ],
    "frameMs": 60,
    "loop": true,
-   "source": "rig2d-skeleton"
+   "source": "puppet-rig"
   },
   "idea_alive": {
    "frames": [
@@ -6528,7 +6528,255 @@
    ],
    "frameMs": 60,
    "loop": true,
-   "source": "rig2d-skeleton"
+   "source": "puppet-rig"
+  },
+  "wave_wave": {
+   "frames": [
+    "wave_wave/wave_001.webp",
+    "wave_wave/wave_002.webp",
+    "wave_wave/wave_003.webp",
+    "wave_wave/wave_004.webp",
+    "wave_wave/wave_005.webp",
+    "wave_wave/wave_006.webp",
+    "wave_wave/wave_007.webp",
+    "wave_wave/wave_008.webp",
+    "wave_wave/wave_009.webp",
+    "wave_wave/wave_010.webp",
+    "wave_wave/wave_011.webp",
+    "wave_wave/wave_012.webp",
+    "wave_wave/wave_013.webp",
+    "wave_wave/wave_014.webp",
+    "wave_wave/wave_015.webp",
+    "wave_wave/wave_016.webp",
+    "wave_wave/wave_017.webp",
+    "wave_wave/wave_018.webp",
+    "wave_wave/wave_019.webp",
+    "wave_wave/wave_020.webp",
+    "wave_wave/wave_021.webp",
+    "wave_wave/wave_022.webp",
+    "wave_wave/wave_023.webp",
+    "wave_wave/wave_024.webp"
+   ],
+   "frameMs": 60,
+   "loop": true,
+   "source": "puppet-rig"
+  },
+  "fix_wave": {
+   "frames": [
+    "fix_wave/wave_001.webp",
+    "fix_wave/wave_002.webp",
+    "fix_wave/wave_003.webp",
+    "fix_wave/wave_004.webp",
+    "fix_wave/wave_005.webp",
+    "fix_wave/wave_006.webp",
+    "fix_wave/wave_007.webp",
+    "fix_wave/wave_008.webp",
+    "fix_wave/wave_009.webp",
+    "fix_wave/wave_010.webp",
+    "fix_wave/wave_011.webp",
+    "fix_wave/wave_012.webp",
+    "fix_wave/wave_013.webp",
+    "fix_wave/wave_014.webp",
+    "fix_wave/wave_015.webp",
+    "fix_wave/wave_016.webp",
+    "fix_wave/wave_017.webp",
+    "fix_wave/wave_018.webp",
+    "fix_wave/wave_019.webp",
+    "fix_wave/wave_020.webp",
+    "fix_wave/wave_021.webp",
+    "fix_wave/wave_022.webp",
+    "fix_wave/wave_023.webp",
+    "fix_wave/wave_024.webp"
+   ],
+   "frameMs": 60,
+   "loop": true,
+   "source": "puppet-rig"
+  },
+  "worried_wave": {
+   "frames": [
+    "worried_wave/wave_001.webp",
+    "worried_wave/wave_002.webp",
+    "worried_wave/wave_003.webp",
+    "worried_wave/wave_004.webp",
+    "worried_wave/wave_005.webp",
+    "worried_wave/wave_006.webp",
+    "worried_wave/wave_007.webp",
+    "worried_wave/wave_008.webp",
+    "worried_wave/wave_009.webp",
+    "worried_wave/wave_010.webp",
+    "worried_wave/wave_011.webp",
+    "worried_wave/wave_012.webp",
+    "worried_wave/wave_013.webp",
+    "worried_wave/wave_014.webp",
+    "worried_wave/wave_015.webp",
+    "worried_wave/wave_016.webp",
+    "worried_wave/wave_017.webp",
+    "worried_wave/wave_018.webp",
+    "worried_wave/wave_019.webp",
+    "worried_wave/wave_020.webp",
+    "worried_wave/wave_021.webp",
+    "worried_wave/wave_022.webp",
+    "worried_wave/wave_023.webp",
+    "worried_wave/wave_024.webp"
+   ],
+   "frameMs": 60,
+   "loop": true,
+   "source": "puppet-rig"
+  },
+  "toast_wave": {
+   "frames": [
+    "toast_wave/wave_001.webp",
+    "toast_wave/wave_002.webp",
+    "toast_wave/wave_003.webp",
+    "toast_wave/wave_004.webp",
+    "toast_wave/wave_005.webp",
+    "toast_wave/wave_006.webp",
+    "toast_wave/wave_007.webp",
+    "toast_wave/wave_008.webp",
+    "toast_wave/wave_009.webp",
+    "toast_wave/wave_010.webp",
+    "toast_wave/wave_011.webp",
+    "toast_wave/wave_012.webp",
+    "toast_wave/wave_013.webp",
+    "toast_wave/wave_014.webp",
+    "toast_wave/wave_015.webp",
+    "toast_wave/wave_016.webp",
+    "toast_wave/wave_017.webp",
+    "toast_wave/wave_018.webp",
+    "toast_wave/wave_019.webp",
+    "toast_wave/wave_020.webp",
+    "toast_wave/wave_021.webp",
+    "toast_wave/wave_022.webp",
+    "toast_wave/wave_023.webp",
+    "toast_wave/wave_024.webp"
+   ],
+   "frameMs": 60,
+   "loop": true,
+   "source": "puppet-rig"
+  },
+  "read_wave": {
+   "frames": [
+    "read_wave/wave_001.webp",
+    "read_wave/wave_002.webp",
+    "read_wave/wave_003.webp",
+    "read_wave/wave_004.webp",
+    "read_wave/wave_005.webp",
+    "read_wave/wave_006.webp",
+    "read_wave/wave_007.webp",
+    "read_wave/wave_008.webp",
+    "read_wave/wave_009.webp",
+    "read_wave/wave_010.webp",
+    "read_wave/wave_011.webp",
+    "read_wave/wave_012.webp",
+    "read_wave/wave_013.webp",
+    "read_wave/wave_014.webp",
+    "read_wave/wave_015.webp",
+    "read_wave/wave_016.webp",
+    "read_wave/wave_017.webp",
+    "read_wave/wave_018.webp",
+    "read_wave/wave_019.webp",
+    "read_wave/wave_020.webp",
+    "read_wave/wave_021.webp",
+    "read_wave/wave_022.webp",
+    "read_wave/wave_023.webp",
+    "read_wave/wave_024.webp"
+   ],
+   "frameMs": 60,
+   "loop": true,
+   "source": "puppet-rig"
+  },
+  "greet_wave": {
+   "frames": [
+    "greet_wave/wave_001.webp",
+    "greet_wave/wave_002.webp",
+    "greet_wave/wave_003.webp",
+    "greet_wave/wave_004.webp",
+    "greet_wave/wave_005.webp",
+    "greet_wave/wave_006.webp",
+    "greet_wave/wave_007.webp",
+    "greet_wave/wave_008.webp",
+    "greet_wave/wave_009.webp",
+    "greet_wave/wave_010.webp",
+    "greet_wave/wave_011.webp",
+    "greet_wave/wave_012.webp",
+    "greet_wave/wave_013.webp",
+    "greet_wave/wave_014.webp",
+    "greet_wave/wave_015.webp",
+    "greet_wave/wave_016.webp",
+    "greet_wave/wave_017.webp",
+    "greet_wave/wave_018.webp",
+    "greet_wave/wave_019.webp",
+    "greet_wave/wave_020.webp",
+    "greet_wave/wave_021.webp",
+    "greet_wave/wave_022.webp",
+    "greet_wave/wave_023.webp",
+    "greet_wave/wave_024.webp"
+   ],
+   "frameMs": 60,
+   "loop": true,
+   "source": "puppet-rig"
+  },
+  "shout_wave": {
+   "frames": [
+    "shout_wave/wave_001.webp",
+    "shout_wave/wave_002.webp",
+    "shout_wave/wave_003.webp",
+    "shout_wave/wave_004.webp",
+    "shout_wave/wave_005.webp",
+    "shout_wave/wave_006.webp",
+    "shout_wave/wave_007.webp",
+    "shout_wave/wave_008.webp",
+    "shout_wave/wave_009.webp",
+    "shout_wave/wave_010.webp",
+    "shout_wave/wave_011.webp",
+    "shout_wave/wave_012.webp",
+    "shout_wave/wave_013.webp",
+    "shout_wave/wave_014.webp",
+    "shout_wave/wave_015.webp",
+    "shout_wave/wave_016.webp",
+    "shout_wave/wave_017.webp",
+    "shout_wave/wave_018.webp",
+    "shout_wave/wave_019.webp",
+    "shout_wave/wave_020.webp",
+    "shout_wave/wave_021.webp",
+    "shout_wave/wave_022.webp",
+    "shout_wave/wave_023.webp",
+    "shout_wave/wave_024.webp"
+   ],
+   "frameMs": 60,
+   "loop": true,
+   "source": "puppet-rig"
+  },
+  "idea_wave": {
+   "frames": [
+    "idea_wave/wave_001.webp",
+    "idea_wave/wave_002.webp",
+    "idea_wave/wave_003.webp",
+    "idea_wave/wave_004.webp",
+    "idea_wave/wave_005.webp",
+    "idea_wave/wave_006.webp",
+    "idea_wave/wave_007.webp",
+    "idea_wave/wave_008.webp",
+    "idea_wave/wave_009.webp",
+    "idea_wave/wave_010.webp",
+    "idea_wave/wave_011.webp",
+    "idea_wave/wave_012.webp",
+    "idea_wave/wave_013.webp",
+    "idea_wave/wave_014.webp",
+    "idea_wave/wave_015.webp",
+    "idea_wave/wave_016.webp",
+    "idea_wave/wave_017.webp",
+    "idea_wave/wave_018.webp",
+    "idea_wave/wave_019.webp",
+    "idea_wave/wave_020.webp",
+    "idea_wave/wave_021.webp",
+    "idea_wave/wave_022.webp",
+    "idea_wave/wave_023.webp",
+    "idea_wave/wave_024.webp"
+   ],
+   "frameMs": 60,
+   "loop": true,
+   "source": "puppet-rig"
   }
  },
  "stateMap": {
