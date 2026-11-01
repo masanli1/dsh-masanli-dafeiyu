@@ -6311,7 +6311,7 @@
    ],
    "frameMs": 60,
    "loop": true,
-   "source": "puppet-rig"
+   "source": "puppet2-hair"
   },
   "fix_alive": {
    "frames": [
@@ -6435,7 +6435,7 @@
    ],
    "frameMs": 60,
    "loop": true,
-   "source": "puppet-rig"
+   "source": "puppet2-hair"
   },
   "greet_alive": {
    "frames": [
@@ -6466,7 +6466,7 @@
    ],
    "frameMs": 60,
    "loop": true,
-   "source": "puppet-rig"
+   "source": "puppet2-hair"
   },
   "shout_alive": {
    "frames": [
@@ -6559,7 +6559,7 @@
    ],
    "frameMs": 60,
    "loop": true,
-   "source": "puppet-rig"
+   "source": "puppet2-hair"
   },
   "fix_wave": {
    "frames": [
@@ -6683,7 +6683,7 @@
    ],
    "frameMs": 60,
    "loop": true,
-   "source": "puppet-rig"
+   "source": "puppet2-hair"
   },
   "greet_wave": {
    "frames": [
@@ -6714,7 +6714,7 @@
    ],
    "frameMs": 60,
    "loop": true,
-   "source": "puppet-rig"
+   "source": "puppet2-hair"
   },
   "shout_wave": {
    "frames": [
@@ -6777,6 +6777,99 @@
    "frameMs": 60,
    "loop": true,
    "source": "puppet-rig"
+  },
+  "wave_nod": {
+   "frames": [
+    "wave_nod/nod_001.webp",
+    "wave_nod/nod_002.webp",
+    "wave_nod/nod_003.webp",
+    "wave_nod/nod_004.webp",
+    "wave_nod/nod_005.webp",
+    "wave_nod/nod_006.webp",
+    "wave_nod/nod_007.webp",
+    "wave_nod/nod_008.webp",
+    "wave_nod/nod_009.webp",
+    "wave_nod/nod_010.webp",
+    "wave_nod/nod_011.webp",
+    "wave_nod/nod_012.webp",
+    "wave_nod/nod_013.webp",
+    "wave_nod/nod_014.webp",
+    "wave_nod/nod_015.webp",
+    "wave_nod/nod_016.webp",
+    "wave_nod/nod_017.webp",
+    "wave_nod/nod_018.webp",
+    "wave_nod/nod_019.webp",
+    "wave_nod/nod_020.webp",
+    "wave_nod/nod_021.webp",
+    "wave_nod/nod_022.webp",
+    "wave_nod/nod_023.webp",
+    "wave_nod/nod_024.webp"
+   ],
+   "frameMs": 60,
+   "loop": true,
+   "source": "puppet2-hair"
+  },
+  "read_nod": {
+   "frames": [
+    "read_nod/nod_001.webp",
+    "read_nod/nod_002.webp",
+    "read_nod/nod_003.webp",
+    "read_nod/nod_004.webp",
+    "read_nod/nod_005.webp",
+    "read_nod/nod_006.webp",
+    "read_nod/nod_007.webp",
+    "read_nod/nod_008.webp",
+    "read_nod/nod_009.webp",
+    "read_nod/nod_010.webp",
+    "read_nod/nod_011.webp",
+    "read_nod/nod_012.webp",
+    "read_nod/nod_013.webp",
+    "read_nod/nod_014.webp",
+    "read_nod/nod_015.webp",
+    "read_nod/nod_016.webp",
+    "read_nod/nod_017.webp",
+    "read_nod/nod_018.webp",
+    "read_nod/nod_019.webp",
+    "read_nod/nod_020.webp",
+    "read_nod/nod_021.webp",
+    "read_nod/nod_022.webp",
+    "read_nod/nod_023.webp",
+    "read_nod/nod_024.webp"
+   ],
+   "frameMs": 60,
+   "loop": true,
+   "source": "puppet2-hair"
+  },
+  "greet_nod": {
+   "frames": [
+    "greet_nod/nod_001.webp",
+    "greet_nod/nod_002.webp",
+    "greet_nod/nod_003.webp",
+    "greet_nod/nod_004.webp",
+    "greet_nod/nod_005.webp",
+    "greet_nod/nod_006.webp",
+    "greet_nod/nod_007.webp",
+    "greet_nod/nod_008.webp",
+    "greet_nod/nod_009.webp",
+    "greet_nod/nod_010.webp",
+    "greet_nod/nod_011.webp",
+    "greet_nod/nod_012.webp",
+    "greet_nod/nod_013.webp",
+    "greet_nod/nod_014.webp",
+    "greet_nod/nod_015.webp",
+    "greet_nod/nod_016.webp",
+    "greet_nod/nod_017.webp",
+    "greet_nod/nod_018.webp",
+    "greet_nod/nod_019.webp",
+    "greet_nod/nod_020.webp",
+    "greet_nod/nod_021.webp",
+    "greet_nod/nod_022.webp",
+    "greet_nod/nod_023.webp",
+    "greet_nod/nod_024.webp"
+   ],
+   "frameMs": 60,
+   "loop": true,
+   "source": "puppet2-hair"
   }
  },
  "stateMap": {
