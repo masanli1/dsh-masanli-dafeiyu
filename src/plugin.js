@@ -19,6 +19,7 @@ import { createMoodStore } from './mood.js'
 import { rememberFacts, extractFacts } from './memory-auto.js'
 import { registerTeslaTool, listSkills, TESLA_CLI, VOICE_CLI, VOICES_DIR } from './tesla.js'
 import { registerBilibiliTool } from './bilibili.js'
+import { registerBiliDailyTool, startBiliDailyScheduler } from './bili-daily.js'
 import { createRoutineStore, registerRoutineTool } from './routine.js'
 import { createEnglishStore, registerEnglishTool } from './english.js'
 import { createEvolutionStore, registerEvolutionTool } from './evolution.js'
@@ -1396,7 +1397,7 @@ function mountCompanion(ctx, config = {}, eventCtx = ctx, logger) {
               try { config.routine?.record?.('mood') } catch {}
               try { config.evolution?.addXp?.(kind === 'praise' ? 3 : kind === 'feed' ? 2 : 1) } catch {}
               if (kind === 'praise') noteLife('被夸', '今天被夸了，心情很好')
-              if (kind === 'feed') noteLife('吃饭', '吃了一碗白饭')
+              if (kind === 'feed') noteLife('吃饭', String(body.food ?? '吃了一碗白饭'))
               if (MOOD_TEXT[kind]) pulse(pickOne(MOOD_TEXT[kind]))
               else if (action === 'tick' && MOOD_TEXT[next.mood === '想你' ? 'missing' : next.mood === '饿' ? 'hungry' : next.mood === '困' ? 'sleepy' : 'happy']) {
                 pulse(pickOne(MOOD_TEXT[next.mood === '想你' ? 'missing' : next.mood === '饿' ? 'hungry' : next.mood === '困' ? 'sleepy' : 'happy']))
@@ -2101,6 +2102,8 @@ export function apply(ctx, config = {}) {
   }
   try {
     registerBilibiliTool(ctx, { logger })
+    try { registerBiliDailyTool(ctx, { logger }) } catch (error) { logger.error?.(`投稿工具挂载失败: ${error?.message ?? error}`) }
+    try { const stop = startBiliDailyScheduler({ logger }); ctx.effect?.(() => stop) } catch (error) { logger.error?.(`投稿定时器失败: ${error?.message ?? error}`) }
   } catch (error) {
     logger.error?.(`dsh-dafeiyu B 站工具挂载失败: ${error?.message ?? error}`)
   }

@@ -48,6 +48,7 @@ final class PetView: NSView {
             }
         }
         app.drawEvolution(in: bounds)
+        app.drawFoodAnim(in: bounds)
         app.drawStatusCard(in: bounds)
         if app.bubbleVisible, let bubble = app.bubbleText as String? {
             app.drawBubble(text: bubble, in: bounds)
@@ -58,7 +59,7 @@ final class PetView: NSView {
         if let app = app {
             let point = event.locationInWindow
             if app.feedButtonRect.contains(point) {
-                app.feed()
+                app.feedRandom()
                 return
             }
         }
@@ -71,6 +72,20 @@ final class PetView: NSView {
 
     override func mouseDragged(with event: NSEvent) {
         app?.drag(event)
+    }
+
+    // 右键宠物 → 提瓦特菜谱菜单（菜单在激活窗口里才稳，右键路径比按钮可靠）
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let app = app else { return nil }
+        let menu = NSMenu()
+        for (i, f) in AppDelegate.foods.enumerated() {
+            let item = NSMenuItem(title: "\(f.emoji) \(f.name) · \(f.taste) +饱腹\(f.satiety)",
+                                  action: #selector(AppDelegate.foodChosen(_:)), keyEquivalent: "")
+            item.tag = i
+            item.target = app
+            menu.addItem(item)
+        }
+        return menu
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -397,6 +412,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var hunger: Double = 0
     var evoLevel: Int = 0
     var evoStage: String = "初生"
+    var cacheHitRate: Double = -1
+    var cacheSegments: Int = 0
+    var ocrDone: Int = 0
+    var ocrTotal: Int = 0
+    var ocrPercent: Double = -1
+    var ocrPages: Int = 0
+    var ocrPagesTotal: Int = 0
+    var ocrRate: Double = -1
+    var ocrEtaHours: Double = -1
+    var ocrEtaAt: String = ""
+    var spaceName: String = ""
+    var spaceUsed: Int = 0
+    var spaceCapacity: Int64 = 0
     var booksPercent: Double = -1
     var booksDone: Int = 0
     var booksTotal: Int = 0
@@ -431,6 +459,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var microIntervals: [String: [Int]] = [:]
     var activityLevel = "normal"
     var microTimer: Timer?
+    var foodAnim: (emoji: String, t0: TimeInterval, dur: Double)?
     var oneShotClip: String? = nil
     var assetRoot: URL!
     var dragOrigin: NSPoint?
@@ -468,7 +497,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         assetRoot = bundleRoot.appendingPathComponent("pet")
         loadManifest(from: bundleRoot.appendingPathComponent("pet-manifest.json"))
 
-        let size = NSSize(width: 412, height: 344 + 96)
+        let size = NSSize(width: 412, height: 344 + 168)   // 卡片按内容高度自适应，别让它顶出去
         window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                           styleMask: [.borderless], backing: .buffered, defer: false)
         window.isOpaque = false
@@ -512,6 +541,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fetchProgress()
         Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in self.fetchMood(); self.fetchEvolution(); self.fetchTraining(); self.fetchEntropy(); self.fetchProgress() }
         Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in self.watchDenoise() }
+        // 外部触发投喂：存在 ~/.dsh/dfy-feed-now 就喂一次并删掉（方便脚本/录制验证）
+        Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            let trigger = NSHomeDirectory() + "/.dsh/dfy-feed-now"
+            if FileManager.default.fileExists(atPath: trigger) {
+                try? FileManager.default.removeItem(atPath: trigger)
+                self.feedRandom()
+            }
+        }
+        // 演示模式：每 6 秒随机投喂一次（DSH_DAFEIYU_FEED_DEMO=1），用来录动画
+        if ProcessInfo.processInfo.environment["DSH_DAFEIYU_FEED_DEMO"] == "1" {
+            Timer.scheduledTimer(withTimeInterval: 6, repeats: true) { _ in self.feedRandom() }
+        }
         startStdin()
         respond("ready")
         if ProcessInfo.processInfo.environment["DSH_DAFEIYU_CHAT_OPEN"] == "1" {
@@ -682,135 +723,187 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         cardHideAt = Date().addingTimeInterval(seconds)
     }
 
-    // 复刻原来的状态卡：标题 / 明细 / 余额
+    // 复刻原来的状态卡：标题 / 明细 / 余额 —— 高度按内容自适应
+    // 复刻原来的状态卡：标题 / 明细 / 统计 / 底栏 —— 尺寸按内容自适应
     func drawStatusCard(in bounds: NSRect) {
         guard cardVisible else { return }
-        let cardHeight: CGFloat = 104
-        let gap: CGFloat = 12
-        let card = NSRect(x: 8, y: 344 + gap, width: bounds.width - 16, height: cardHeight)
-        let path = NSBezierPath(roundedRect: card, xRadius: 16, yRadius: 16)
-        NSColor(calibratedWhite: 1.0, alpha: 0.97).setFill()
-        path.fill()
-        NSColor(calibratedWhite: 0, alpha: 0.10).setStroke()
-        path.lineWidth = 1
-        path.stroke()
+        let pad: CGFloat = 14
+        let cardW = bounds.width - 16
+        let contentW = cardW - pad * 2
+        let titleFont = NSFont.systemFont(ofSize: 14, weight: .semibold)
+        let bodyFont = NSFont.systemFont(ofSize: 11.5)
+        let smallFont = NSFont.systemFont(ofSize: 9)
 
         let title = statusTitle()
-        let titleAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 14, weight: .semibold),
-            .foregroundColor: NSColor(calibratedWhite: 0.10, alpha: 1),
-        ]
-        (title as NSString).draw(at: NSPoint(x: card.minX + 16, y: card.maxY - 28), withAttributes: titleAttrs)
-
-        let detailAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11.5),
-            .foregroundColor: NSColor(calibratedWhite: 0.45, alpha: 1),
-        ]
-        (statusDetail() as NSString).draw(at: NSPoint(x: card.minX + 16, y: card.maxY - 50), withAttributes: detailAttrs)
-
-        if !lastBalanceText.isEmpty {
-            let rightAttrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 11.5),
-                .foregroundColor: NSColor(calibratedWhite: 0.45, alpha: 1),
-            ]
-            let text = "账户 " + lastBalanceText as NSString
-            let size = text.size(withAttributes: rightAttrs)
-            text.draw(at: NSPoint(x: card.maxX - 16 - size.width, y: card.maxY - 28), withAttributes: rightAttrs)
-        }
+        let detail = statusDetail()
+        let balance = lastBalanceText.isEmpty ? "" : "账户 " + lastBalanceText
         let hungerText = String(format: "饿 %.0f%% · Lv.%d %@", hunger * 100, evoLevel, evoStage)
-        let hungerAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11.5),
-            .foregroundColor: hunger > 0.65 ? NSColor(calibratedRed: 0.78, green: 0.35, blue: 0.25, alpha: 1)
-                                           : NSColor(calibratedWhite: 0.45, alpha: 1),
-        ]
-        let hungerString = hungerText as NSString
-        let hungerSize = hungerString.size(withAttributes: hungerAttrs)
-        hungerString.draw(at: NSPoint(x: card.maxX - 16 - hungerSize.width, y: card.minY + 10), withAttributes: hungerAttrs)
-        // 左下角"🍚 喂食"按钮
-        let feedRect = NSRect(x: card.minX + 12, y: card.minY + 8, width: 74, height: 24)
+
+        let measureW: (String, NSFont) -> CGFloat = { text, font in
+            (text as NSString).size(withAttributes: [.font: font]).width
+        }
+        let measureH: (String, NSFont, CGFloat) -> CGFloat = { text, font, width in
+            ceil((text as NSString).boundingRect(with: NSSize(width: width, height: .greatestFiniteMagnitude),
+                                                 options: [.usesLineFragmentOrigin, .usesFontLeading],
+                                                 attributes: [.font: font]).height)
+        }
+
+        // 明细：最多折 3 行
+        let detailH: CGFloat = max(15, min(45, measureH(detail, bodyFont, contentW)))
+        var balanceFont = bodyFont
+        if measureW(balance, balanceFont) + measureW(title, titleFont) + 24 > contentW {
+            balanceFont = NSFont.systemFont(ofSize: 10)
+        }
+
+        // 统计行：三列挤不下就折成两行
+        var stats: [(String, Double, NSColor)] = []
+        if booksPercent >= 0 {
+            stats.append((String(format: "书 %d/%d · %.1f%%", booksDone, booksTotal, booksPercent), booksPercent,
+                          NSColor(calibratedRed: 0.35, green: 0.72, blue: 0.55, alpha: 1)))
+        }
+        if denoisePercent >= 0 {
+            stats.append((String(format: "噪 %d/%d · %.1f%%", denoiseDone, denoiseTotal, denoisePercent), denoisePercent,
+                          NSColor(calibratedRed: 0.35, green: 0.72, blue: 0.55, alpha: 1)))
+        }
+        if cacheHitRate >= 0 {
+            stats.append((String(format: "段 %d万 · 命中 %.0f%%", cacheSegments / 10000, cacheHitRate), cacheHitRate,
+                          NSColor(calibratedRed: 0.45, green: 0.62, blue: 0.95, alpha: 1)))
+        }
+        if spaceCapacity > 0 {
+            let wan = Double(spaceUsed) / 10000.0
+            let label = spaceUsed > 0
+                ? String(format: "空 17! · %.1f万/355.7万亿", wan)
+                : "空 17! · 0/355.7万亿"
+            let pct = min(100, Double(spaceUsed) / 1_000_000 * 100)
+            stats.append((label, pct, NSColor(calibratedRed: 0.55, green: 0.45, blue: 0.85, alpha: 1)))
+        }
+
+        // 统计行：两列一行，放不下自动折行
+        let perRow = 2
+        let rowCount = max(1, (stats.count + perRow - 1) / perRow)
+        let rowH: CGFloat = 26
+        let statsH = CGFloat(rowCount) * rowH
+        let footerH: CGFloat = 34
+        let cardH = 12 + 22 + 4 + detailH + 6 + statsH + footerH
+        let card = NSRect(x: (bounds.width - cardW) / 2, y: bounds.height - cardH - 26, width: cardW, height: cardH)
+
+        NSColor(calibratedWhite: 1.0, alpha: 0.96).setFill()
+        let bg = NSBezierPath(roundedRect: card, xRadius: 14, yRadius: 14)
+        bg.fill()
+        NSColor(calibratedWhite: 0.86, alpha: 1).setStroke()
+        bg.lineWidth = 1
+        bg.stroke()
+
+        (title as NSString).draw(at: NSPoint(x: card.minX + pad, y: card.maxY - 30),
+                                 withAttributes: [.font: titleFont,
+                                                  .foregroundColor: NSColor(calibratedWhite: 0.15, alpha: 1)])
+        if !balance.isEmpty {
+            let bw = measureW(balance, balanceFont)
+            (balance as NSString).draw(at: NSPoint(x: card.maxX - pad - bw, y: card.maxY - 27),
+                                       withAttributes: [.font: balanceFont,
+                                                        .foregroundColor: NSColor(calibratedWhite: 0.45, alpha: 1)])
+        }
+        (detail as NSString).draw(in: NSRect(x: card.minX + pad, y: card.maxY - 30 - 6 - detailH,
+                                             width: contentW, height: detailH),
+                                  withAttributes: [.font: bodyFont,
+                                                   .foregroundColor: NSColor(calibratedWhite: 0.42, alpha: 1)])
+
+        let colW = (contentW - 12) / CGFloat(perRow)
+        for (index, item) in stats.enumerated() {
+            let r = index / perRow, c = index % perRow
+            let x = card.minX + pad + CGFloat(c) * (colW + 12)
+            let y = card.maxY - 30 - 6 - detailH - 8 - CGFloat(r + 1) * rowH + 10
+            (item.0 as NSString).draw(at: NSPoint(x: x, y: y + 6), withAttributes: [
+                .font: smallFont, .foregroundColor: NSColor(calibratedWhite: 0.40, alpha: 1)])
+            let bar = NSRect(x: x, y: y - 4, width: colW, height: 3)
+            NSColor(calibratedWhite: 0.92, alpha: 1).setFill()
+            NSBezierPath(roundedRect: bar, xRadius: 1.5, yRadius: 1.5).fill()
+            let filled = NSRect(x: bar.minX, y: bar.minY,
+                                width: max(1, bar.width * CGFloat(min(100, max(0, item.1)) / 100)), height: bar.height)
+            item.2.setFill()
+            NSBezierPath(roundedRect: filled, xRadius: 1.5, yRadius: 1.5).fill()
+        }
+
+        // 底栏：喂食按钮（左）+ 饥饿（右）
+        let feedRect = NSRect(x: card.minX + pad - 2, y: card.minY + 10, width: 74, height: 24)
         feedButtonRect = feedRect
         let feedPath = NSBezierPath(roundedRect: feedRect, xRadius: 12, yRadius: 12)
-        NSColor(calibratedRed: 0.95, green: 0.93, blue: 0.88, alpha: 1).setFill()
+        NSColor(calibratedWhite: 0.97, alpha: 1).setFill()
         feedPath.fill()
-        NSColor(calibratedWhite: 0.35, alpha: 0.25).setStroke()
+        NSColor(calibratedWhite: 0.85, alpha: 1).setStroke()
         feedPath.lineWidth = 1
         feedPath.stroke()
-        let feedAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11.5, weight: .medium),
-            .foregroundColor: NSColor(calibratedWhite: 0.25, alpha: 1),
-        ]
-        ("🍚 喂食" as NSString).draw(at: NSPoint(x: feedRect.minX + 10, y: feedRect.minY + 5), withAttributes: feedAttrs)
+        ("🍚 喂食▾" as NSString).draw(at: NSPoint(x: feedRect.minX + 10, y: feedRect.minY + 5),
+                                     withAttributes: [.font: NSFont.systemFont(ofSize: 11),
+                                                      .foregroundColor: NSColor(calibratedWhite: 0.25, alpha: 1)])
 
-        if lastTasksText.isEmpty { lastTasksText = "空闲" }
-        if trainingPercent >= 0 {
-            let barRect = NSRect(x: card.minX + 14, y: card.minY + 30, width: card.width - 28, height: 4)
-            NSColor(calibratedWhite: 0.92, alpha: 1).setFill()
-            NSBezierPath(roundedRect: barRect, xRadius: 2, yRadius: 2).fill()
-            let filled = NSRect(x: barRect.minX, y: barRect.minY,
-                                width: max(2, barRect.width * CGFloat(min(100, max(0, trainingPercent)) / 100)),
-                                height: barRect.height)
-            NSColor(calibratedRed: 0.35, green: 0.65, blue: 1.0, alpha: 1).setFill()
-            NSBezierPath(roundedRect: filled, xRadius: 2, yRadius: 2).fill()
+        var hungerFont = NSFont.systemFont(ofSize: 11.5)
+        if measureW(hungerText, hungerFont) > card.width - 110 {
+            hungerFont = NSFont.systemFont(ofSize: 9.5)
         }
-        if booksPercent >= 0 || denoisePercent >= 0 {
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 9, weight: .regular),
-                .foregroundColor: NSColor(calibratedWhite: 0.45, alpha: 1),
-            ]
-            let rowY = card.minY + 34
-            let barW = (card.width - 36) / 2
-            for (index, pair) in [(booksDone, booksTotal, booksPercent, "书"), (denoiseDone, denoiseTotal, denoisePercent, "噪")].enumerated() {
-                let x = card.minX + 14 + CGFloat(index) * (barW + 8)
-                let label = "\(pair.3) \(pair.0)/\(pair.1) · \(String(format: "%.1f", pair.2))%"
-                (label as NSString).draw(at: NSPoint(x: x, y: rowY + 5), withAttributes: attrs)
-                let bar = NSRect(x: x, y: rowY, width: barW, height: 3)
-                NSColor(calibratedWhite: 0.92, alpha: 1).setFill()
-                NSBezierPath(roundedRect: bar, xRadius: 1.5, yRadius: 1.5).fill()
-                let filled = NSRect(x: bar.minX, y: bar.minY, width: max(1, bar.width * CGFloat(min(100, pair.2) / 100)), height: bar.height)
-                NSColor(calibratedRed: 0.35, green: 0.72, blue: 0.55, alpha: 1).setFill()
-                NSBezierPath(roundedRect: filled, xRadius: 1.5, yRadius: 1.5).fill()
-            }
-        }
-        if entropySeries.count >= 2 && booksPercent < 0 && denoisePercent < 0 {
-            let chart = NSRect(x: card.minX + 14, y: card.minY + 34, width: card.width - 28, height: 14)
-            NSColor(calibratedWhite: 0.95, alpha: 1).setFill()
-            NSBezierPath(roundedRect: chart, xRadius: 3, yRadius: 3).fill()
-            let path = NSBezierPath()
-            let maxValue = max(1.0, entropySeries.max() ?? 1)
-            let stepX = chart.width / CGFloat(max(1, entropySeries.count - 1))
-            for (index, value) in entropySeries.enumerated() {
-                let x = chart.minX + CGFloat(index) * stepX
-                let y = chart.minY + chart.height * CGFloat(min(1, max(0, value / maxValue)))
-                if index == 0 { path.move(to: NSPoint(x: x, y: y)) } else { path.line(to: NSPoint(x: x, y: y)) }
-            }
-            path.lineWidth = 1.4
-            NSColor(calibratedRed: 0.45, green: 0.55, blue: 0.95, alpha: 1).setStroke()
-            path.stroke()
-        }
-        if !lastTasksText.isEmpty {
-            let rightAttrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 11.5),
-                .foregroundColor: NSColor(calibratedWhite: 0.45, alpha: 1),
-            ]
-            let text = lastTasksText as NSString
-            let size = text.size(withAttributes: rightAttrs)
-            text.draw(at: NSPoint(x: card.maxX - 16 - size.width, y: card.minY + 54), withAttributes: rightAttrs)
-        }
+        let hungerAttrs: [NSAttributedString.Key: Any] = [
+            .font: hungerFont,
+            .foregroundColor: hunger > 0.65
+                ? NSColor(calibratedRed: 0.78, green: 0.35, blue: 0.25, alpha: 1)
+                : NSColor(calibratedWhite: 0.45, alpha: 1),
+        ]
+        let hungerW = measureW(hungerText, hungerFont)
+        (hungerText as NSString).draw(at: NSPoint(x: card.maxX - pad - hungerW, y: card.minY + 12),
+                                      withAttributes: hungerAttrs)
     }
 
     func fetchProgress() {
-        let path = NSHomeDirectory() + "/.dsh/dsh-dafeiyu-progress.json"
-        guard let data = FileManager.default.contents(atPath: path),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
-        if let books = object["books"] as? [String: Any] {
-            booksPercent = (books["percent"] as? Double) ?? -1
-            booksDone = (books["done"] as? Int) ?? 0
-            booksTotal = (books["total"] as? Int) ?? 0
+        // 统一统计文件优先（dfy-stats.json），读不到再回落到旧文件
+        let hubPath = NSHomeDirectory() + "/.dsh/dfy-stats.json"
+        var gotHub = false
+        if let data = FileManager.default.contents(atPath: hubPath),
+           let hub = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+            gotHub = true
+            if let b = hub["books"] as? [String: Any] {
+                booksDone = (b["done"] as? Int) ?? 0
+                booksTotal = (b["total"] as? Int) ?? 0
+                booksPercent = (b["percent"] as? Double) ?? -1
+            }
+            if let d = hub["denoise"] as? [String: Any] {
+                denoisePercent = (d["percent"] as? Double) ?? -1
+                denoiseDone = (d["done"] as? Int) ?? 0
+                denoiseTotal = (d["total"] as? Int) ?? 0
+            }
+            if let seg = hub["segments"] as? [String: Any] {
+                cacheSegments = (seg["distinct"] as? Int) ?? 0
+                cacheHitRate = (seg["hitRate"] as? Double) ?? -1
+            }
+            if let sp = hub["space"] as? [String: Any] {
+                spaceUsed = (sp["used"] as? Int) ?? 0
+                spaceCapacity = (sp["capacity"] as? Int64) ?? 0
+            }
+            if let o = hub["ocr"] as? [String: Any] {
+                ocrDone = (o["done"] as? Int) ?? 0
+                ocrTotal = (o["total"] as? Int) ?? 0
+                ocrPages = (o["pages"] as? Int) ?? 0
+                ocrPagesTotal = (o["pagesTotal"] as? Int) ?? 0
+            }
         }
-        if let denoise = object["denoise"] as? [String: Any] {
-            denoisePercent = (denoise["percent"] as? Double) ?? -1
-            denoiseDone = (denoise["done"] as? Int) ?? 0
-            denoiseTotal = (denoise["total"] as? Int) ?? 0
+        if !gotHub {
+            let path = NSHomeDirectory() + "/.dsh/dsh-dafeiyu-progress.json"
+            if let data = FileManager.default.contents(atPath: path),
+               let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+                if let books = object["books"] as? [String: Any] {
+                    booksPercent = (books["percent"] as? Double) ?? -1
+                    booksDone = (books["done"] as? Int) ?? 0
+                    booksTotal = (books["total"] as? Int) ?? 0
+                }
+                if let denoise = object["denoise"] as? [String: Any] {
+                    denoisePercent = (denoise["percent"] as? Double) ?? -1
+                    denoiseDone = (denoise["done"] as? Int) ?? 0
+                    denoiseTotal = (denoise["total"] as? Int) ?? 0
+                }
+            }
+            if let data = FileManager.default.contents(atPath: NSHomeDirectory() + "/.dsh/dfy-cache-stats.json"),
+               let st = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+                cacheHitRate = (st["hitRate"] as? Double) ?? -1
+                cacheSegments = (st["segments"] as? Int) ?? 0
+            }
         }
         petView.needsDisplay = true
     }
@@ -853,7 +946,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         petView.needsDisplay = true
     }
 
-    // 外观进化：Lv.1 光晕，Lv.2 星点，Lv.3 头顶光环，Lv.4 传说（紫电 + 劈刀）
+    /// 食物动画：从右下角"拿出"→ 送到嘴边 → 缩小被吃掉
+    func drawFoodAnim(in bounds: NSRect) {
+        guard let a = foodAnim else { return }
+        let elapsed = Date().timeIntervalSinceReferenceDate - a.t0
+        let p = elapsed / a.dur
+        if p >= 1 { foodAnim = nil; return }
+        let cx = bounds.midX
+        let mouth = NSPoint(x: cx, y: bounds.height * 0.30)
+        var pos: NSPoint
+        var scale: CGFloat
+        var alpha: CGFloat = 1
+        if p < 0.38 {
+            let q = CGFloat(p / 0.38)
+            let y0 = bounds.height * 0.18
+            pos = NSPoint(x: cx + 56 - 44 * q, y: y0 + (mouth.y - 8 - y0) * q)
+            scale = 0.75 + 0.45 * q
+        } else if p < 0.72 {
+            let q = CGFloat((p - 0.38) / 0.34)
+            pos = NSPoint(x: cx + 12 - 12 * q, y: mouth.y - 4 * q)
+            scale = 1.2
+        } else {
+            let q = CGFloat((p - 0.72) / 0.28)
+            pos = NSPoint(x: mouth.x + 2 * sin(q * 30), y: mouth.y)
+            scale = 1.2 * (1 - q)
+            alpha = 1 - q * 0.5
+        }
+        let size = 34 * scale
+        let font = NSFont(name: "Apple Color Emoji", size: size) ?? NSFont.systemFont(ofSize: size)
+        var attrs: [NSAttributedString.Key: Any] = [.font: font]
+        if alpha < 1 { attrs[.foregroundColor] = NSColor(calibratedWhite: 1, alpha: alpha) }
+        (a.emoji as NSString).draw(at: NSPoint(x: pos.x - size / 2, y: pos.y), withAttributes: attrs)
+    }
+
     func drawEvolution(in bounds: NSRect) {
         guard evoLevel > 0 else { return }
         if evoLevel >= 4 { drawLegendary(in: bounds); return }
@@ -891,8 +1016,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-
-    // 传说形态：紫电背景 + 斜向劈刀 + 碎片，每 3 秒来一次强闪
     func drawLegendary(in bounds: NSRect) {
         let now = Date().timeIntervalSinceReferenceDate
         drawUltimateIfNeeded(in: bounds, now: now)
@@ -990,7 +1113,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             shard.fill()
         }
     }
-
 
     func drawUltimateIfNeeded(in bounds: NSRect, now: TimeInterval) {
         guard let start = ultimateStart else { cameraScale = 1; cameraOffsetY = 0; return }
@@ -1193,10 +1315,86 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func feed() {
-        post("/plugins/dsh-dafeiyu/mood", ["action": "feed"])
-        playReaction("eat_rice")
-        showBubble("谢谢，真好吃！", seconds: 3)
+    // 提瓦特菜谱：名称 / 味道 / 饱食 / 经验
+    struct Food { let name: String; let emoji: String; let taste: String; let satiety: Int; let xp: Int }
+    static let foods: [Food] = [
+        Food(name: "蒙德烤鱼", emoji: "🐟", taste: "鲜", satiety: 12, xp: 6),
+        Food(name: "鱼人吐司", emoji: "🥪", taste: "咸", satiety: 14, xp: 7),
+        Food(name: "提瓦特煎蛋", emoji: "🍳", taste: "咸", satiety: 10, xp: 5),
+        Food(name: "甜甜花酿鸡", emoji: "🍗", taste: "甜", satiety: 18, xp: 9),
+        Food(name: "北地烟熏鸡", emoji: "🍖", taste: "咸香", satiety: 20, xp: 10),
+        Food(name: "兽肉薄荷卷", emoji: "🌿", taste: "清凉", satiety: 15, xp: 8),
+        Food(name: "冷肉拼盘", emoji: "🥩", taste: "咸鲜", satiety: 22, xp: 11),
+        Food(name: "蟹黄豆腐", emoji: "🦀", taste: "鲜", satiety: 16, xp: 8),
+        Food(name: "黄金蟹", emoji: "🦐", taste: "鲜甜", satiety: 24, xp: 12),
+        Food(name: "黄油煎鱼", emoji: "🧈", taste: "奶香", satiety: 18, xp: 9),
+        Food(name: "火火肉酱面", emoji: "🍝", taste: "辣", satiety: 20, xp: 10),
+        Food(name: "满足沙拉", emoji: "🥗", taste: "清爽", satiety: 12, xp: 6),
+        Food(name: "嘟嘟莲糖", emoji: "🍬", taste: "甜", satiety: 6, xp: 3),
+        Food(name: "蜜酱胡萝卜煎肉", emoji: "🥕", taste: "甜咸", satiety: 17, xp: 9),
+        Food(name: "提瓦特热香饼", emoji: "🥞", taste: "甜", satiety: 16, xp: 8),
+        Food(name: "莲子禽蛋羹", emoji: "🥣", taste: "清甜", satiety: 13, xp: 7),
+    ]
+
+    func feedRandom() {
+        feed(AppDelegate.foods.randomElement())
+    }
+
+    func showFoodMenu(at point: NSPoint) {
+        let menu = NSMenu()
+        for (i, f) in AppDelegate.foods.enumerated() {
+            let item = NSMenuItem(title: "\(f.emoji) \(f.name) · \(f.taste) +饱腹\(f.satiety)",
+                                  action: #selector(foodChosen(_:)), keyEquivalent: "")
+            item.tag = i
+            item.target = self
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil,
+                   at: NSPoint(x: point.x, y: point.y + 4),
+                   in: petView)
+    }
+
+    @objc func foodChosen(_ sender: NSMenuItem) {
+        guard sender.tag >= 0, sender.tag < AppDelegate.foods.count else { return }
+        feed(AppDelegate.foods[sender.tag])
+    }
+
+    /// 按味道挑反应动作（有就用，没有就回落到 eat_rice）
+    func reactionFor(_ taste: String) -> String {
+        if taste.contains("辣") { return "shake" }
+        if taste.contains("甜") { return "heart" }
+        if taste.contains("酸") { return "lean" }
+        if taste.contains("苦") { return "nod" }
+        if taste.contains("清凉") || taste.contains("清爽") { return "sway" }
+        if taste.contains("鲜") { return "bounce" }
+        return "eat_rice"
+    }
+
+    func feed(_ food: Food? = nil) {
+        var payload: [String: Any] = ["action": "feed"]
+        if let f = food {
+            payload["food"] = f.name
+            payload["taste"] = f.taste
+            payload["satiety"] = f.satiety
+            payload["xp"] = f.xp
+        }
+        post("/plugins/dsh-dafeiyu/mood", payload)
+        if let f = food {
+            foodAnim = (f.emoji, Date().timeIntervalSinceReferenceDate, 2.8)
+        }
+        playReaction(food.map { reactionFor($0.taste) } ?? "eat_rice")
+        let say = food.map { "\($0.emoji)\($0.name) · \($0.taste)味！" } ?? "谢谢，真好吃！"
+        if let f = food {   // 调试：记下这次投喂了什么
+            let line = "\(Date()) \(f.emoji)\(f.name) \(f.taste) 饱腹\(f.satiety) 经验\(f.xp) → \(reactionFor(f.taste))\n"
+            if let d = line.data(using: .utf8) {
+                let p = "/tmp/dfy-feed.log"
+                if let h = FileHandle(forWritingAtPath: p) { h.seekToEndOfFile(); h.write(d); h.closeFile() }
+                else { try? line.write(toFile: p, atomically: true, encoding: .utf8) }
+            }
+        }
+        // 宿主会先回一句固定台词，这里延后一点再说食物名，避免被盖掉
+        showBubble(say, seconds: 3)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { self.showBubble(say, seconds: 3.4) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.fetchMood() }
     }
 
