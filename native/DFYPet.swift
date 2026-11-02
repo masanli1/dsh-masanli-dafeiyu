@@ -423,6 +423,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var ocrEtaHours: Double = -1
     var ocrEtaAt: String = ""
     var spaceName: String = ""
+    var taskRows: [(String, Double)] = []
     var spaceUsed: Int = 0
     var spaceCapacity: Int64 = 0
     var booksPercent: Double = -1
@@ -769,6 +770,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             stats.append((String(format: "段 %d万 · 命中 %.0f%%", cacheSegments / 10000, cacheHitRate), cacheHitRate,
                           NSColor(calibratedRed: 0.45, green: 0.62, blue: 0.95, alpha: 1)))
         }
+        // 临时任务：有后台任务就多一行，任务结束自动消失
+        for (i, t) in taskRows.enumerated() {
+            let color = i == 0
+                ? NSColor(calibratedRed: 0.28, green: 0.66, blue: 0.72, alpha: 1)
+                : NSColor(calibratedRed: 0.45, green: 0.60, blue: 0.82, alpha: 1)
+            stats.append((t.0, t.1, color))
+        }
         if spaceCapacity > 0 {
             let wan = Double(spaceUsed) / 10000.0
             let label = spaceUsed > 0
@@ -872,6 +880,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let seg = hub["segments"] as? [String: Any] {
                 cacheSegments = (seg["distinct"] as? Int) ?? 0
                 cacheHitRate = (seg["hitRate"] as? Double) ?? -1
+            }
+            if let tasks = hub["tasks"] as? [String: Any] {
+                var rows: [(Double, String, Double)] = []
+                for (_, v) in tasks {
+                    guard let t = v as? [String: Any] else { continue }
+                    let name = (t["name"] as? String) ?? "任务"
+                    let pct = (t["percent"] as? Double) ?? 0
+                    let at = (t["at"] as? Double) ?? 0
+                    rows.append((at, name, pct))
+                }
+                rows.sort { $0.0 > $1.0 }
+                taskRows = rows.prefix(2).map { String(format: "%@ %.0f%%", String($0.1.prefix(10)), $0.2) }
+                    .enumerated().map { ($1, rows[$0].2) }
+            } else {
+                taskRows = []
             }
             if let sp = hub["space"] as? [String: Any] {
                 spaceUsed = (sp["used"] as? Int) ?? 0
