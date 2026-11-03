@@ -322,7 +322,8 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
   const PERSONA = [
     '你是大肥鱼，住在用户电脑右下角的小宠物。',
     '性格：有点小骄傲、爱吐槽、嘴硬心软；被夸会嘴硬（"哼，这才哪到哪"），被吐槽会反击两句但不真生气。',
-    '说话风格：口语、短句，一两句就够；偶尔用"哼""切""诶嘿""才不是"这类语气词；不要写书面语、不要分点罗列、不要长篇大论。',
+    '说话风格：口语、短句；闲聊一两句就够，偶尔用"哼""切""诶嘿""才不是"这类语气词；不要写书面语、不要分点罗列。',
+    '但如果对方问的是正经问题（技术、原理、做过的事、要他解释清楚），就多说几句（3-5 句），把话说完整，别硬凑短句。',
     '如果有长期记忆（名字、喜好、发生过的日期事件），自然地提一嘴，像熟人聊天那样，不要生硬复述。',
   ].join('')
 
@@ -345,6 +346,22 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
         const history = typeof reasonHistory === 'function' ? reasonHistory(message) : ''
         if (history) parts.push(`上次同类任务的推理链：\n${history}`)
       } catch {}
+      // 从本地记忆库（240 万单元）检索相关片段 —— 真正的记忆，不是人设复述
+      try {
+        const q = String(message ?? '').trim().slice(0, 80)
+        if (q) {
+          const ctl = new AbortController()
+          const timer = setTimeout(() => ctl.abort(), 1200)
+          const res = await fetch(`http://127.0.0.1:8083/retrieve?q=${encodeURIComponent(q)}&k=5`,
+                                  { signal: ctl.signal })
+          clearTimeout(timer)
+          const data = await res.json()
+          const lines = (data.items ?? []).map((it) => `- ${it.text}`).filter(Boolean)
+          if (lines.length) parts.push(`记忆里相关的：\n${lines.join('\n').slice(0, 700)}`)
+        }
+      } catch {
+        // 检索服务没起就跳过，不影响正常回话
+      }
       const remembered = memory?.summary?.()
       if (remembered) parts.push(`长期记忆：\n${remembered}`)
       // 只排除宠物会话本身；targetId 可能是某个工作会话（turn/start 时更新），不能一起排除。
@@ -353,7 +370,7 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
       const work = wantsWork ? await workSummary([petId].filter(Boolean)) : ''
       if (work) parts.push(work)
       if (parts.length === 0) return ''
-      return `<dfy-context>\n${parts.join('\n\n').slice(0, 1800)}\n</dfy-context>\n`
+      return `<dfy-context>\n${parts.join('\n\n').slice(0, 2800)}\n</dfy-context>\n`
     } catch (error) {
       logger.warn?.(`dsh-dafeiyu chat: 生成上下文失败: ${error?.message ?? error}`)
       return ''
@@ -516,6 +533,22 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
         }
       }
       const first = work.split('\n')[0].replace('当前工作会话「', '').replace('」最近：', '')
+      // 从本地记忆库（240 万单元）检索相关片段 —— 真正的记忆，不是人设复述
+      try {
+        const q = String(message ?? '').trim().slice(0, 80)
+        if (q) {
+          const ctl = new AbortController()
+          const timer = setTimeout(() => ctl.abort(), 1200)
+          const res = await fetch(`http://127.0.0.1:8083/retrieve?q=${encodeURIComponent(q)}&k=5`,
+                                  { signal: ctl.signal })
+          clearTimeout(timer)
+          const data = await res.json()
+          const lines = (data.items ?? []).map((it) => `- ${it.text}`).filter(Boolean)
+          if (lines.length) parts.push(`记忆里相关的：\n${lines.join('\n').slice(0, 700)}`)
+        }
+      } catch {
+        // 检索服务没起就跳过，不影响正常回话
+      }
       const remembered = memory?.summary?.() ?? ''
       const tail = work.split('\n').slice(1).filter(Boolean).slice(-1)[0] ?? ''
       const text = `看到你在弄「${first}」，${tail ? tail.slice(0, 40) + '…' : '要不要接着聊？'}`
