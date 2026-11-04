@@ -358,6 +358,11 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
           const data = await res.json()
           const lines = (data.items ?? []).map((it) => `- ${it.text}`).filter(Boolean)
           if (lines.length) parts.push(`记忆里相关的：\n${lines.join('\n').slice(0, 700)}`)
+          if (typeof data.drive === 'number') {
+            const d = data.drive
+            const tone = d < 0.09 ? '很低，说话懒一点、短一点' : (d > 0.34 ? '很足，可以多说几句' : '正常')
+            parts.push(`现在精力：${d.toFixed(2)}（${tone}）`)
+          }
         }
       } catch {
         // 检索服务没起就跳过，不影响正常回话
@@ -545,6 +550,11 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
           const data = await res.json()
           const lines = (data.items ?? []).map((it) => `- ${it.text}`).filter(Boolean)
           if (lines.length) parts.push(`记忆里相关的：\n${lines.join('\n').slice(0, 700)}`)
+          if (typeof data.drive === 'number') {
+            const d = data.drive
+            const tone = d < 0.09 ? '很低，说话懒一点、短一点' : (d > 0.34 ? '很足，可以多说几句' : '正常')
+            parts.push(`现在精力：${d.toFixed(2)}（${tone}）`)
+          }
         }
       } catch {
         // 检索服务没起就跳过，不影响正常回话
