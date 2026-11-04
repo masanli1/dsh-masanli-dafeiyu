@@ -528,6 +528,10 @@ final class PetController: NSObject {
         reduced.state = reducedMotion ? .on : .off
         menu.addItem(reduced)
 
+        let overview = NSMenuItem(title: "📊 看总览", action: #selector(openOverview(_:)), keyEquivalent: "")
+        overview.target = self
+        menu.addItem(overview)
+
         let openWeb = NSMenuItem(title: openLabel, action: #selector(openWebUI(_:)), keyEquivalent: "")
         openWeb.target = self
         menu.addItem(openWeb)
@@ -582,7 +586,15 @@ final class PetController: NSObject {
         contentView?.needsDisplay = true
     }
 
-    @objc private func openWebUI(_ sender: Any?) {
+    @objc private func openOverview(_ sender: Any?) {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let path = home + "/Downloads/dfy/总览.html"
+        if FileManager.default.fileExists(atPath: path) {
+            NSWorkspace.shared.open(URL(fileURLWithPath: path))
+        }
+    }
+
+    @objc func openWebUI(_ sender: Any?) {
         if let url = URL(string: webuiURL), NSWorkspace.shared.open(url) {
             return
         }

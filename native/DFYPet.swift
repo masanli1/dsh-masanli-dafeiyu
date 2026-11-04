@@ -85,6 +85,10 @@ final class PetView: NSView {
             item.target = app
             menu.addItem(item)
         }
+        menu.addItem(NSMenuItem.separator())
+        let ov = NSMenuItem(title: "📊 看总览", action: #selector(AppDelegate.openOverview), keyEquivalent: "")
+        ov.target = app
+        menu.addItem(ov)
         return menu
     }
 
@@ -1375,6 +1379,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.popUp(positioning: nil,
                    at: NSPoint(x: point.x, y: point.y + 4),
                    in: petView)
+    }
+
+    @objc func openOverview() {
+        let p = NSHomeDirectory() + "/Downloads/dfy/总览.html"
+        if FileManager.default.fileExists(atPath: p) {
+            NSWorkspace.shared.open(URL(fileURLWithPath: p))
+        }
     }
 
     @objc func foodChosen(_ sender: NSMenuItem) {
