@@ -363,6 +363,16 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
             const tone = d < 0.09 ? '很低，说话懒一点、短一点' : (d > 0.34 ? '很足，可以多说几句' : '正常')
             parts.push(`现在精力：${d.toFixed(2)}（${tone}）`)
           }
+          const sig = data.signals || {}
+          if (sig.tier === 'id' || sig.tier === 'term') {
+            parts.push(`这条是"${sig.topic || '那个词'}"的准确定义/事实，优先按上面记忆里的说，不要扯远`)
+          }
+          if (sig.level !== null && sig.level !== undefined) {
+            parts.push(`当前位格：L${sig.level}（${sig.level >= 3 ? '比较高，说话可以笃定' : '还不高，别装懂'}）`)
+          }
+          if (sig.chain_next) {
+            parts.push(`后台想到的接法（可以顺着用，也可以不用）：${String(sig.chain_next).slice(0, 60)}`)
+          }
         }
       } catch {
         // 检索服务没起就跳过，不影响正常回话
@@ -554,6 +564,16 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
             const d = data.drive
             const tone = d < 0.09 ? '很低，说话懒一点、短一点' : (d > 0.34 ? '很足，可以多说几句' : '正常')
             parts.push(`现在精力：${d.toFixed(2)}（${tone}）`)
+          }
+          const sig = data.signals || {}
+          if (sig.tier === 'id' || sig.tier === 'term') {
+            parts.push(`这条是"${sig.topic || '那个词'}"的准确定义/事实，优先按上面记忆里的说，不要扯远`)
+          }
+          if (sig.level !== null && sig.level !== undefined) {
+            parts.push(`当前位格：L${sig.level}（${sig.level >= 3 ? '比较高，说话可以笃定' : '还不高，别装懂'}）`)
+          }
+          if (sig.chain_next) {
+            parts.push(`后台想到的接法（可以顺着用，也可以不用）：${String(sig.chain_next).slice(0, 60)}`)
           }
         }
       } catch {
