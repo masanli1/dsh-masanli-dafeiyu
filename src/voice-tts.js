@@ -9,7 +9,10 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const DEFAULT_ROOT = join(process.env.HOME || '', 'Downloads', 'dfy', 'gpt-sovits')
+const DEFAULT_ROOT = firstExisting([
+  join('/Volumes/T1000/dfy-models', 'gpt-sovits'),
+  join(process.env.HOME || '', 'Downloads', 'dfy', 'gpt-sovits'),
+]) || join(process.env.HOME || '', 'Downloads', 'dfy', 'gpt-sovits')
 
 function firstExisting(paths) {
   return paths.find((path) => path && existsSync(path)) || ''
