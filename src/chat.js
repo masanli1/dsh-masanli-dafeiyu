@@ -351,7 +351,7 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
         const q = String(message ?? '').trim().slice(0, 80)
         if (q) {
           const ctl = new AbortController()
-          const timer = setTimeout(() => ctl.abort(), 1200)
+          const timer = setTimeout(() => ctl.abort(), 4000)
           const res = await fetch(`http://127.0.0.1:8083/retrieve?q=${encodeURIComponent(q)}&k=5`,
                                   { signal: ctl.signal })
           clearTimeout(timer)
@@ -370,6 +370,14 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
           if (sig.level !== null && sig.level !== undefined) {
             parts.push(`当前位格：L${sig.level}（${sig.level >= 3 ? '比较高，说话可以笃定' : '还不高，别装懂'}）`)
           }
+          const plan = data.plan || {}
+          if ((plan.facts || []).length) {
+            parts.push(`回答要点（至少用上一条，别编事实）：\n${plan.facts.map((f) => `- ${String(f).slice(0, 90)}`).join('\n')}`)
+          }
+          if ((plan.structure || []).length) {
+            parts.push(`结构：${plan.structure.join(' → ')}`)
+          }
+          if (plan.tone) parts.push(`语气：${plan.tone}`)
           if (sig.chain_next) {
             parts.push(`后台想到的接法（可以顺着用，也可以不用）：${String(sig.chain_next).slice(0, 60)}`)
           }
@@ -553,7 +561,7 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
         const q = String(message ?? '').trim().slice(0, 80)
         if (q) {
           const ctl = new AbortController()
-          const timer = setTimeout(() => ctl.abort(), 1200)
+          const timer = setTimeout(() => ctl.abort(), 4000)
           const res = await fetch(`http://127.0.0.1:8083/retrieve?q=${encodeURIComponent(q)}&k=5`,
                                   { signal: ctl.signal })
           clearTimeout(timer)
@@ -572,7 +580,15 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
           if (sig.level !== null && sig.level !== undefined) {
             parts.push(`当前位格：L${sig.level}（${sig.level >= 3 ? '比较高，说话可以笃定' : '还不高，别装懂'}）`)
           }
-          if (sig.chain_next) {
+                    const plan = data.plan || {}
+          if ((plan.facts || []).length) {
+            parts.push(`回答要点（至少用上一条，别编事实）：\n${plan.facts.map((f) => `- ${String(f).slice(0, 90)}`).join('\n')}`)
+          }
+          if ((plan.structure || []).length) {
+            parts.push(`结构：${plan.structure.join(' → ')}`)
+          }
+          if (plan.tone) parts.push(`语气：${plan.tone}`)
+if (sig.chain_next) {
             parts.push(`后台想到的接法（可以顺着用，也可以不用）：${String(sig.chain_next).slice(0, 60)}`)
           }
         }
