@@ -598,16 +598,6 @@ export function createChatService({ ctx, logger = console, config = () => ({}), 
           } else if (scene === 'argue') {
             parts.push('这条像在争论：先承认对方哪点对，再讲你的理由')
           }
-          const scene = data.scene || ''
-          if (scene === 'comment') {
-            parts.push('这条像评论区留言：回得短、口语化、像网友，别写成说明书')
-          } else if (scene === 'comfort') {
-            parts.push('对方在说累/难受：先接住情绪，别科普、别讲道理')
-          } else if (scene === 'explain') {
-            parts.push('这条在问定义：先给一句准定义，再补一句对比或用途')
-          } else if (scene === 'argue') {
-            parts.push('这条像在争论：先承认对方哪点对，再讲你的理由')
-          }
 if (sig.chain_next) {
             parts.push(`后台想到的接法（可以顺着用，也可以不用）：${String(sig.chain_next).slice(0, 60)}`)
           }
